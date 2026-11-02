@@ -41,8 +41,8 @@ Deno.serve(async req => {
     out.append('model', 'whisper-large-v3-turbo')
     out.append('response_format', 'verbose_json')
     out.append('temperature', '0')
-    // no `language` field: Whisper detects it. The prompt only sets context for names and code-mixed speech.
-    out.append('prompt', 'Customer review of a campus food store. May mix Hindi and English, for example: khana accha tha but service slow thi.')
+    // Transcribe, never translate: no `language` field (Whisper detects it) and no prompt, because an English
+    // prompt can bias output toward English or romanised text. Each language is written in its own script.
 
     const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST', headers: { Authorization: `Bearer ${secret.value}` }, body: out,
