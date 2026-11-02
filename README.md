@@ -12,12 +12,15 @@ npm run dev
 ```
 
 ## Backend
-`supabase/schema.sql` creates tables, RLS and RPCs. `supabase/seed.sql` adds six stores, menus and demo logins.
-Tables are not readable by the browser except stores and menus. Everything else goes through
-security-definer RPCs that check a session token.
+ then  create tables, RLS and RPCs.  adds six stores, menus and demo logins
+(seed.sql predates the migration; the migration re-keys demo vendors to email logins).
+Only stores and menus are readable by the browser. Everything else goes through security-definer RPCs that check a session token.
+
+## Features
+- Student sign up: only  emails are accepted and verified automatically (domain check, no inbox verification).
+- Vendor sign up: owner details, store setup and starting SKUs. Dashboard: orders, products (add / edit / SKU / stock / hide / delete), voice insights, store settings.
+- Voice review: live transcript (browser speech recognition), editable before sending, with sentiment and per-topic analysis ().
 
 ## Demo logins
-- Student: `PGP2026-114` / `looply123`
-- Vendor: any store, PIN `1234`
-
+- Student:  (or ) / - Vendors: , , , , ,  / 
 Demo data only. Wallet top-ups are simulated.

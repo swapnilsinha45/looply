@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { rpc, supabase } from './api'
+import Voice from './Voice'
+import Vendor from './Vendor'
+import { StudentAuth, VendorAuth } from './Auth'
 import type { Dashboard, MenuItem, OrderRow, Store, Student } from './api'
 
 type Route =
@@ -51,18 +54,18 @@ export default function App() {
   return (
     <div className="phone">
       {route.n === 'welcome' && <Welcome {...ctx} />}
-      {route.n === 'studentLogin' && <StudentLogin {...ctx} onAuth={(t, s) => { store.set('looply_student', t); setToken(t); setStudent(s); reset({ n: 'home' }) }} />}
+      {route.n === 'studentLogin' && <StudentAuth back={back} onAuth={(t, s) => { store.set('looply_student', t); setToken(t); setStudent(s); reset({ n: 'home' }) }} />}
       {route.n === 'home' && student && <Home {...ctx} student={student} />}
       {route.n === 'stores' && <Stores {...ctx} />}
       {route.n === 'menu' && student && <Menu {...ctx} student={student} shop={route.store} />}
       {route.n === 'cart' && student && <Cart {...ctx} student={student} shop={route.store} items={route.items} />}
       {route.n === 'paid' && student && <Paid {...ctx} student={student} r={route} />}
-      {route.n === 'voice' && <Voice {...ctx} orderId={route.orderId} />}
+      {route.n === 'voice' && <Voice orderId={route.orderId} token={token} back={back} reset={reset} setStudent={setStudent} say={say} />}
       {route.n === 'orders' && <Orders {...ctx} />}
       {route.n === 'rewards' && student && <Rewards {...ctx} student={student} />}
       {route.n === 'topup' && student && <TopUp {...ctx} student={student} />}
       {route.n === 'spend' && <Spend {...ctx} />}
-      {route.n === 'vendorLogin' && <VendorLogin back={back} onAuth={t => { store.set('looply_vendor', t); setVToken(t); reset({ n: 'vendor' }) }} />}
+      {route.n === 'vendorLogin' && <VendorAuth back={back} onAuth={t => { store.set('looply_vendor', t); setVToken(t); reset({ n: 'vendor' }) }} />}
       {route.n === 'vendor' && vToken && <Vendor token={vToken} logout={logout} say={say} />}
       {!student && ['home', 'menu', 'cart', 'paid', 'rewards', 'topup'].includes(route.n) && <div className="center">Loading…</div>}
       {toast && <div className="toast">{toast}</div>}
@@ -112,35 +115,6 @@ function Welcome({ go }: Ctx) {
         </button>
         <div className="banner">Voice feedback is the king. 15 seconds after each order unlocks 5% off.</div>
       </div>
-    </div>
-  )
-}
-
-function StudentLogin({ back, onAuth }: Ctx & { onAuth: (t: string, s: Student) => void }) {
-  const [code, setCode] = useState('')
-  const [pw, setPw] = useState('')
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-  const submit = async () => {
-    setBusy(true); setErr('')
-    try {
-      const r = await rpc<Student & { token: string }>('student_login', { p_code: code.trim(), p_password: pw })
-      onAuth(r.token, r)
-    } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
-  }
-  return (
-    <div className="screen">
-      <Header title="Student sign in" sub="Use your campus ID" back={back} />
-      <form className="scroll stack" onSubmit={e => { e.preventDefault(); submit() }}>
-        <div><div className="label">Student ID</div>
-          <input className="field" value={code} onChange={e => setCode(e.target.value)} placeholder="PGP2026-114" autoCapitalize="characters" autoComplete="username" /></div>
-        <div><div className="label">Password</div>
-          <input className="field" type="password" value={pw} onChange={e => setPw(e.target.value)} placeholder="••••••••" autoComplete="current-password" /></div>
-        {err && <div className="err">{err}</div>}
-        <div className="banner small">Demo account: ID <b>PGP2026-114</b>, password <b>looply123</b></div>
-        <button type="button" className="pill" onClick={() => { setCode('PGP2026-114'); setPw('looply123') }}>Autofill demo student</button>
-        <button className="btn" disabled={busy || !code || !pw}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      </form>
     </div>
   )
 }
@@ -223,7 +197,7 @@ function Menu({ shop, student, back, go }: Ctx & { shop: Store; student: Student
   const [items, setItems] = useState<MenuItem[] | null>(null)
   const [qty, setQty] = useState<Record<string, number>>({})
   useEffect(() => {
-    supabase.from('menu_items').select('*').eq('store_id', shop.id).order('sort').then(({ data }) => setItems(data as MenuItem[]))
+    supabase.from('menu_items').select('*').eq('store_id', shop.id).eq('active', true).order('sort').then(({ data }) => setItems(data as MenuItem[]))
   }, [shop.id])
   const total = (items ?? []).reduce((s, i) => s + i.price * (qty[i.id] ?? 0), 0)
   const count = Object.values(qty).reduce((a, b) => a + b, 0)
@@ -299,10 +273,13 @@ function Cart({ shop, items: init, student, back, replace, setStudent, token }: 
           </div>
         ))}
         <div className="card">
-          <div className="sum"><span className="muted">Order total</span><b>{rupee(sub)}</b></div>
-          {disc > 0 && <div className="sum" style={{ color: 'var(--green)' }}><span>Voice reward 5% off</span><b>−{rupee(disc)}</b></div>}
-          <div className="sum"><span className="muted">Wallet balance now</span><b>{rupee(student.wallet)}</b></div>
-          <div className="left"><div><b style={{ fontSize: 14 }}>Amount left after purchase</b><div className="small muted">Updates as you add items</div></div><b>{rupee(student.wallet - total)}</b></div>
+          {disc > 0 && <>
+            <div className="sum"><span className="muted">Subtotal</span><b>{rupee(sub)}</b></div>
+            <div className="sum" style={{ color: 'var(--green)' }}><span>Voice reward 5% off</span><b>−{rupee(disc)}</b></div>
+          </>}
+          <div className="total-row"><div><div className="muted small">Order total</div><div className="small muted">{lines.reduce((n, l) => n + l.qty, 0)} item(s)</div></div><b className="total-amt">{rupee(total)}</b></div>
+          <div className="sum small"><span className="muted">Wallet balance now</span><b>{rupee(student.wallet)}</b></div>
+          <div className="sum small"><span className="muted">Amount left after purchase</span><b style={{ color: student.wallet - total < 0 ? 'var(--red)' : 'var(--ink)' }}>{rupee(student.wallet - total)}</b></div>
         </div>
         {student.notes_count >= 5 && sub <= 150 && <div className="banner small">Voice reward ready: add {rupee(151 - sub)} more to get 5% off.</div>}
         <div className="card choice sel"><span className="badge dk" style={{ width: 34, height: 34, fontSize: 16 }}>L</span><b style={{ fontSize: 15 }}>Pay with Looply wallet</b><span style={{ marginLeft: 'auto', color: 'var(--green)', fontWeight: 700, fontSize: 12 }}>Selected</span></div>
@@ -331,83 +308,6 @@ function Paid({ student, r, go, reset }: Ctx & { student: Student; r: Extract<Ro
         <button className="btn dk" onClick={() => go({ n: 'voice', orderId: r.orderId })}>● Tap to record (15 sec)</button>
       </div>
       <button className="linkbtn" style={{ color: '#aaa', marginBottom: 24 }} onClick={() => reset({ n: 'home' })}>Skip for now</button>
-    </div>
-  )
-}
-
-const TOPICS = ['Taste', 'Wait time', 'Price', 'Hygiene', 'Staff', 'Stock']
-
-function Voice({ orderId, token, back, reset, setStudent, say }: Ctx & { orderId: string }) {
-  const [topics, setTopics] = useState<string[]>([])
-  const [phase, setPhase] = useState<'idle' | 'rec' | 'saving'>('idle')
-  const [secs, setSecs] = useState(0)
-  const [err, setErr] = useState('')
-  const recorder = useRef<MediaRecorder | null>(null)
-  const chunks = useRef<Blob[]>([])
-  const timer = useRef<number | undefined>(undefined)
-  const started = useRef(0)
-
-  const finish = useCallback(async (blob: Blob, duration: number) => {
-    setPhase('saving')
-    try {
-      const ext = blob.type.includes('mp4') ? 'mp4' : blob.type.includes('ogg') ? 'ogg' : 'webm'
-      const path = `${orderId}/${Date.now()}.${ext}`
-      const up = await supabase.storage.from('voice-notes').upload(path, blob, { contentType: blob.type.split(';')[0] })
-      if (up.error) throw up.error
-      const s = await rpc<Student>('save_voice_note', { p_token: token, p_order: orderId, p_duration: duration, p_topics: topics, p_path: path })
-      setStudent(s)
-      say(s.notes_count >= 5 ? 'Voice note saved. 5% offer unlocked!' : `Voice note saved (${s.notes_count}/5)`)
-      reset({ n: 'home' })
-    } catch (e) { setErr(errMsg(e)); setPhase('idle') }
-  }, [orderId, token, topics, setStudent, say, reset])
-
-  const stop = useCallback(() => { window.clearInterval(timer.current); recorder.current?.state === 'recording' && recorder.current.stop() }, [])
-  useEffect(() => () => { window.clearInterval(timer.current); recorder.current?.stream.getTracks().forEach(t => t.stop()) }, [])
-
-  const start = async () => {
-    setErr('')
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const rec = new MediaRecorder(stream)
-      recorder.current = rec; chunks.current = []
-      rec.ondataavailable = e => e.data.size && chunks.current.push(e.data)
-      rec.onstop = () => {
-        stream.getTracks().forEach(t => t.stop())
-        const dur = Math.round((Date.now() - started.current) / 1000)
-        finish(new Blob(chunks.current, { type: rec.mimeType || 'audio/webm' }), dur)
-      }
-      rec.start(); started.current = Date.now(); setSecs(0); setPhase('rec')
-      timer.current = window.setInterval(() => {
-        const s = Math.round((Date.now() - started.current) / 1000)
-        setSecs(s); if (s >= 15) stop()
-      }, 250)
-    } catch {
-      setErr('Microphone is blocked or unavailable. Allow mic access in your browser and try again.')
-    }
-  }
-
-  return (
-    <div className={`screen dark ${phase === 'rec' ? 'rec' : ''}`} style={{ overflowY: 'auto' }}>
-      <div className="row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '28px 16px 0' }}>
-        <button className="back" style={{ background: '#3a3524', color: '#fff' }} onClick={back} disabled={phase !== 'idle'}>‹</button>
-        <b>Voice feedback</b>
-      </div>
-      <div style={{ textAlign: 'center', padding: '28px 20px 0' }}>
-        <h1 style={{ margin: 0, fontSize: 28 }}>How was your order?</h1>
-        <p style={{ color: '#bbb', fontSize: 14 }}>Speak naturally for 10–15 seconds. Taste, wait time, price, anything.</p>
-        <div className="orb"><div><button onClick={phase === 'rec' ? stop : start} disabled={phase === 'saving'} aria-label="Record" /></div></div>
-        {phase === 'rec' ? <div className="bigtime">0:{String(secs).padStart(2, '0')} / 0:15</div>
-          : <b style={{ color: 'var(--yellow)' }}>{phase === 'saving' ? 'Saving your note…' : 'Tap the mic to start'}</b>}
-        {phase === 'rec' && <p className="small" style={{ color: '#bbb' }}>Tap the mic again to finish</p>}
-        <div className="topics" style={{ marginTop: 20 }}>
-          {TOPICS.map(t => <button key={t} className={topics.includes(t) ? 'on' : ''} onClick={() => setTopics(a => (a.includes(t) ? a.filter(x => x !== t) : [...a, t]))}>{t}</button>)}
-        </div>
-        <p className="small" style={{ color: '#999' }}>Not sure what to say? Pick topics as a prompt.</p>
-        {err && <div className="err" style={{ margin: '8px 0' }}>{err}</div>}
-      </div>
-      <div style={{ flex: 1 }} />
-      <div className="reward">Reward: 5% off above ₹150 after your 5th note.</div>
-      {phase === 'idle' && <button className="linkbtn" style={{ color: '#aaa', marginBottom: 20 }} onClick={() => reset({ n: 'home' })}>Skip</button>}
     </div>
   )
 }
@@ -500,74 +400,3 @@ function Spend({ back, token }: Ctx) {
   )
 }
 
-function VendorLogin({ back, onAuth }: { back: () => void; onAuth: (t: string) => void }) {
-  const [stores, setStores] = useState<Store[]>([])
-  const [sid, setSid] = useState('')
-  const [pin, setPin] = useState('')
-  const [err, setErr] = useState('')
-  useEffect(() => { supabase.from('stores').select('*').order('sort').then(({ data }) => { setStores(data as Store[]); setSid((data as Store[])?.[0]?.id ?? '') }) }, [])
-  const cur = stores.find(s => s.id === sid)
-  const submit = async () => {
-    setErr('')
-    try { onAuth((await rpc<{ token: string }>('vendor_login', { p_store: sid, p_pin: pin })).token) } catch (e) { setErr(errMsg(e)) }
-  }
-  return (
-    <div className="screen">
-      <div className="hero"><div className="row"><button className="back" onClick={back}>‹</button>
-        <div style={{ flex: 1 }}><h1>Vendor sign in</h1><div className="sub">Store manager access</div></div><span className="badge-v">VENDOR</span></div></div>
-      <form className="scroll stack" onSubmit={e => { e.preventDefault(); submit() }}>
-        <div><div className="label">Store</div>
-          <select className="field" value={sid} onChange={e => setSid(e.target.value)}>{stores.map(s => <option key={s.id} value={s.id}>{s.name} · {s.code}</option>)}</select></div>
-        <div><div className="label">Staff PIN</div>
-          <input className="field" type="password" inputMode="numeric" maxLength={8} value={pin} onChange={e => setPin(e.target.value)} placeholder="••••" /></div>
-        <div className="banner small">Demo PIN for every store: <b>1234</b> {cur && <>· {cur.name}</>}</div>
-        {err && <div className="err">{err}</div>}
-        <button className="btn dk" disabled={!pin || !sid}>Open store dashboard</button>
-      </form>
-    </div>
-  )
-}
-
-const NEXT: Record<string, string> = { new: 'preparing', preparing: 'ready', ready: 'done' }
-
-function Vendor({ token, logout, say }: { token: string; logout: () => void; say: (m: string) => void }) {
-  const [d, setD] = useState<Dashboard | null>(null)
-  const [err, setErr] = useState('')
-  const load = useCallback(() => rpc<Dashboard>('vendor_dashboard', { p_token: token }).then(setD).catch(e => {
-    setErr(errMsg(e)); if (/expired/i.test(errMsg(e))) logout()
-  }), [token, logout])
-  useEffect(() => { load(); const t = setInterval(load, 5000); return () => clearInterval(t) }, [load])
-  const advance = async (id: string, status: string) => { try { await rpc('vendor_set_status', { p_token: token, p_order: id, p_status: NEXT[status] }); load() } catch (e) { say(errMsg(e)) } }
-  const restock = async (id: string) => { try { await rpc('vendor_restock', { p_token: token, p_item: id, p_qty: 50 }); say('Restocked +50'); load() } catch (e) { say(errMsg(e)) } }
-  if (!d) return <div className="center">{err || 'Loading dashboard…'}</div>
-  const pct = d.orders_total ? Math.round((d.voice_notes / d.orders_total) * 100) : 0
-  return (
-    <div className="screen">
-      <div className="hero"><div className="row"><div style={{ flex: 1 }}><h1 style={{ fontSize: 22 }}>{d.store.name}</h1><div className="sub">{d.store.open ? 'Accepting orders' : 'Closed'} · live, refreshes every 5s</div></div>
-        <span className="badge-v">VENDOR</span></div></div>
-      <div className="scroll stack">
-        <div className="stats">
-          <div className="card stat"><span className="muted small">Orders today</span><b>{d.orders_today}</b></div>
-          <div className="card stat"><span className="muted small">Revenue today</span><b>{rupee(Number(d.revenue_today))}</b></div>
-          <div className="card stat"><span className="muted small">Voice notes</span><b>{d.voice_notes}</b><span className="up">{pct}% of orders</span></div>
-          <div className="card stat"><span className="muted small">Top voice topics</span>
-            <div className="small" style={{ marginTop: 6, fontWeight: 700 }}>{Object.entries(d.topics).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([t, c]) => `${t} (${c})`).join(', ') || '—'}</div></div>
-        </div>
-        {d.low_stock.map(i => (
-          <div key={i.id} className="alert"><span>{i.name}: {i.stock === 0 ? 'sold out' : `only ${i.stock} left`}.</span><button onClick={() => restock(i.id)}>Restock ›</button></div>
-        ))}
-        <b>Live queue</b>
-        {d.queue.length === 0 && <div className="muted center" style={{ padding: 16 }}>No open orders. New orders appear here instantly.</div>}
-        {d.queue.map(o => (
-          <div key={o.id} className="card"><div className="qrow">
-            <div><b>#{o.seq}</b> {o.student_name}<div className="small muted" style={{ marginTop: 4 }}>{o.items}</div>
-              {o.note_sec != null && <span className="note">Voice note ▶ {o.note_sec}s</span>}</div>
-            <div className="r"><b>{rupee(o.total)}</b>
-              <button className={`status ${o.status}`} onClick={() => advance(o.id, o.status)}>{o.status === 'new' ? 'New → Prepare' : o.status === 'preparing' ? 'Preparing → Ready' : 'Ready → Done'}</button></div>
-          </div></div>
-        ))}
-      </div>
-      <div className="tabs"><button className="on">Orders</button><button onClick={logout}>Sign out</button></div>
-    </div>
-  )
-}
