@@ -88,17 +88,3 @@ export const ASPECT_X: Record<string, string[]> = {
   Stock: ['स्टॉक', 'उपलब्ध', 'खत्म', 'ख़त्म', 'सामान', 'विकल्प', 'stock', 'available', 'khatam', 'khtm', 'saman', 'samaan', 'option', 'varieties'],
 }
 
-export type LangOption = { code: string; label: string; native: string }
-// BCP-47 codes accepted by the browser SpeechRecognition API.
-export const LANGS: LangOption[] = [
-  { code: 'en-IN', label: 'English', native: 'English' },
-  { code: 'hi-IN', label: 'Hindi', native: 'हिन्दी' },
-  { code: 'mr-IN', label: 'Marathi', native: 'मराठी' },
-  { code: 'bn-IN', label: 'Bengali', native: 'বাংলা' },
-  { code: 'ta-IN', label: 'Tamil', native: 'தமிழ்' },
-  { code: 'te-IN', label: 'Telugu', native: 'తెలుగు' },
-  { code: 'kn-IN', label: 'Kannada', native: 'ಕನ್ನಡ' },
-  { code: 'ml-IN', label: 'Malayalam', native: 'മലയാളം' },
-  { code: 'gu-IN', label: 'Gujarati', native: 'ગુજરાતી' },
-  { code: 'pa-IN', label: 'Punjabi', native: 'ਪੰਜਾਬੀ' },
-]
