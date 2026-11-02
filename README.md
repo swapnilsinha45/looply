@@ -1,6 +1,6 @@
 # Looply — Campus Commerce POC
 
-Pay at campus stores with a wallet, record a 15-second voice note, earn 5% off. Student app and vendor dashboard.
+Pay at campus stores with a wallet, record a voice review, earn 5% off. Student app and vendor dashboard.
 
 **Stack:** Vite + React + TypeScript, Supabase (Postgres, RPC, Storage), hosted on Vercel. All on free tiers.
 
@@ -12,15 +12,17 @@ npm run dev
 ```
 
 ## Backend
- then  create tables, RLS and RPCs.  adds six stores, menus and demo logins
-(seed.sql predates the migration; the migration re-keys demo vendors to email logins).
+Run `supabase/schema.sql`, then `supabase/seed.sql`, then `supabase/002_accounts_vendor_tools.sql` (the migration moves vendor
+login from PIN to email + password and adds SKUs, transcripts and sentiment).
 Only stores and menus are readable by the browser. Everything else goes through security-definer RPCs that check a session token.
 
 ## Features
-- Student sign up: only  emails are accepted and verified automatically (domain check, no inbox verification).
-- Vendor sign up: owner details, store setup and starting SKUs. Dashboard: orders, products (add / edit / SKU / stock / hide / delete), voice insights, store settings.
-- Voice review: live transcript (browser speech recognition), editable before sending, with sentiment and per-topic analysis ().
+- Student sign up: only `@iimb.ac.in` emails are accepted and marked verified automatically (domain check; no inbox verification).
+- Vendor sign up: owner details, store setup and starting SKUs. Dashboard: orders, products (add, edit, SKU, stock, hide, delete), voice insights, store settings.
+- Voice review: live transcript (browser speech recognition), editable before sending, with sentiment and per-topic analysis (`src/sentiment.ts`).
 
-## Demo logins
-- Student:  (or ) / - Vendors: , , , , ,  / 
+## Demo logins (password `looply123`)
+- Student: `durgesh@iimb.ac.in` (or ID `PGP2026-114`)
+- Vendors: `hgs@looply.demo`, `snc@looply.demo`, `aml@looply.demo`, `mrs@looply.demo`, `gmc@looply.demo`, `juc@looply.demo`
+
 Demo data only. Wallet top-ups are simulated.
