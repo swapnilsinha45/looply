@@ -2,6 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rpc, supabase } from './api'
 import type { Student } from './api'
 import { analyse, sentimentEmoji } from './sentiment'
+import { LANGS } from './lexicons'
+
+const initialLang = () => {
+  try {
+    const saved = localStorage.getItem('looply_lang')
+    if (saved && LANGS.some(l => l.code === saved)) return saved
+  } catch { /* storage unavailable */ }
+  const nav = (typeof navigator !== 'undefined' ? navigator.language : '').slice(0, 2).toLowerCase()
+  return LANGS.find(l => l.code.startsWith(nav))?.code ?? 'en-IN'
+}
 
 const TOPICS = ['Taste', 'Wait time', 'Price', 'Hygiene', 'Staff', 'Stock']
 const MAX_SECS = 15
@@ -23,7 +33,8 @@ export default function Voice({ orderId, token, back, reset, setStudent, say }: 
   const [picked, setPicked] = useState<string[]>([])
   const [err, setErr] = useState('')
   const [note, setNote] = useState('')
-  const rec = useRef<MediaRecorder | null>(null)
+  const [lang, setLang] = useState(initialLang)
+  const rec =useRef<MediaRecorder | null>(null)
   const recog = useRef<any>(null) // eslint-disable-line @typescript-eslint/no-explicit-any
   const chunks = useRef<Blob[]>([])
   const finalText = useRef('')
@@ -83,7 +94,7 @@ export default function Voice({ orderId, token, back, reset, setStudent, say }: 
 
     if (SR) {
       const r = new SR()
-      r.lang = 'en-IN'; r.continuous = true; r.interimResults = true
+      r.lang = lang; r.continuous = true; r.interimResults = true
       r.onresult = (e: any) => { // eslint-disable-line @typescript-eslint/no-explicit-any
         let interim = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -143,7 +154,15 @@ export default function Voice({ orderId, token, back, reset, setStudent, say }: 
       {(phase === 'idle' || phase === 'rec') && (
         <div style={{ textAlign: 'center', padding: '28px 20px 0' }}>
           <h1 style={{ margin: 0, fontSize: 28 }}>How was your order?</h1>
-          <p style={{ color: '#bbb', fontSize: 14 }}>Speak naturally for up to 15 seconds. You can edit the text before sending.</p>
+          <p style={{ color: '#bbb', fontSize: 14 }}>Speak in your language for up to 15 seconds. You can edit the text before sending.</p>
+          {phase === 'idle' && (
+            <div className="topics langs" role="radiogroup" aria-label="Language">
+              {LANGS.map(l => (
+                <button key={l.code} role="radio" aria-checked={lang === l.code} className={lang === l.code ? 'on' : ''}
+                  onClick={() => { setLang(l.code); try { localStorage.setItem('looply_lang', l.code) } catch { /* ignore */ } }}>{l.native}</button>
+              ))}
+            </div>
+          )}
           <div className="orb"><div><button onClick={phase === 'rec' ? stop : start} aria-label={phase === 'rec' ? 'Stop' : 'Record'} /></div></div>
           {phase === 'rec' ? (
             <>
