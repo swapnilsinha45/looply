@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
+import Console from './Console'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
 
-type Item = { id: string; sku: string; name: string; description: string; price: number; veg: boolean; stock: number; active: boolean }
+export type Item = { id: string; sku: string; name: string; description: string; price: number; veg: boolean; stock: number; active: boolean }
 type Note = { id: string; transcript: string; sentiment: string; sentiment_score: number; duration_sec: number; topics: string[]; created_at: string; student: string; seq: number | null }
-type Dash = {
+export type Dash = {
   store: { id: string; code: string; name: string; tags: string; description: string; pure_veg: boolean; eta_min: number; open: boolean; phone: string | null }
   owner: { name: string; email: string; phone: string | null }
   orders_today: number; revenue_today: number; voice_notes: number; orders_total: number
@@ -17,6 +18,33 @@ type Dash = {
   queue: { id: string; seq: number; total: number; status: string; created_at: string; student_name: string; items: string; note_sec: number | null; note_sentiment: string | null }[]
 }
 
+export type Analytics = {
+  orders_today: number; revenue_today: number; orders_yesterday: number; revenue_yesterday: number; avg_order_value: number
+  orders_total: number; notes_total: number
+  hourly: { h: number; n: number }[]
+  top_products: { name: string; units: number }[]
+  daily_sentiment: { day: string; score: number | null; n: number }[]
+  hourly_sentiment: { h: number; score: number; n: number }[]
+  by_product: { name: string; score: number; n: number }[]
+  by_theme: Record<string, { pos: number; neu: number; neg: number }>
+  sentiment: { positive: number; neutral: number; negative: number; net: number }
+  rewards: { rewarded_orders: number; discount_total: number; students_with_notes: number; students_unlocked: number }
+  orders: { id: string; seq: number; total: number; status: string; created_at: string; student: string; items: string; note_sentiment: string | null; has_note: boolean }[]
+  notes: { id: string; transcript: string; sentiment: string; sentiment_score: number; topics: string[]; language: string | null; created_at: string; seq: number | null; student: string; items: string | null }[]
+}
+
+// The Figma "vendor console" layout is for desktop; phones keep the compact app layout.
+const useWide = () => {
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 900px)').matches)
+  useEffect(() => {
+    const m = window.matchMedia('(min-width: 900px)')
+    const f = () => setWide(m.matches)
+    m.addEventListener('change', f)
+    return () => m.removeEventListener('change', f)
+  }, [])
+  return wide
+}
+
 const rupee = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong')
 const NEXT: Record<string, string> = { new: 'preparing', preparing: 'ready', ready: 'done' }
@@ -25,11 +53,16 @@ const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg:
 
 export default function Vendor({ token, logout, say }: { token: string; logout: () => void; say: (m: string) => void }) {
   const [d, setD] = useState<Dash | null>(null)
+  const [a, setA] = useState<Analytics | null>(null)
+  const wide = useWide()
   const [tab, setTab] = useState<'orders' | 'menu' | 'insights' | 'store'>('orders')
   const [err, setErr] = useState('')
   const [editing, setEditing] = useState<Item | null>(null)
 
-  const load = useCallback(() => rpc<Dash>('vendor_dashboard', { p_token: token }).then(x => { setD(x); setErr('') }).catch(e => {
+  const load = useCallback(() => Promise.all([
+    rpc<Dash>('vendor_dashboard', { p_token: token }),
+    rpc<Analytics>('vendor_analytics', { p_token: token }),
+  ]).then(([x, y]) => { setD(x); setA(y); setErr('') }).catch(e => {
     setErr(errMsg(e)); if (/expired/i.test(errMsg(e))) logout()
   }), [token, logout])
   useEffect(() => { load(); const t = setInterval(() => { if (!editing) load() }, 5000); return () => clearInterval(t) }, [load, editing])
@@ -37,7 +70,8 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
   const run = async (fn: string, args: Record<string, unknown>, ok?: string) => {
     try { await rpc(fn, { p_token: token, ...args }); if (ok) say(ok); await load(); return true } catch (e) { say(errMsg(e)); return false }
   }
-  if (!d) return <div className="center">{err || 'Loading dashboard…'}</div>
+  if (!d || !a) return <div className="center">{err || 'Loading dashboard…'}</div>
+  if (wide) return <Console d={d} a={a} run={run} logout={logout} />
 
   const advance = (id: string, status: string) => run('vendor_set_status', { p_order: id, p_status: NEXT[status] })
   const restock = (i: Item) => run('vendor_upsert_item', { p_id: i.id, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock + 50, p_active: i.active }, `${i.name} restocked +50`)
@@ -56,8 +90,8 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
       <div className="scroll stack">
         {tab === 'orders' && (<>
           <div className="stats">
-            <div className="card stat"><span className="muted small">Orders today</span><b>{d.orders_today}</b></div>
-            <div className="card stat"><span className="muted small">Revenue today</span><b>{rupee(d.revenue_today)}</b></div>
+            <div className="card stat"><span className="muted small">Orders today</span><b>{a.orders_today}</b></div>
+            <div className="card stat"><span className="muted small">Revenue today</span><b>{rupee(a.revenue_today)}</b></div>
             <div className="card stat"><span className="muted small">Voice notes</span><b>{d.voice_notes}</b><span className="up">{pct}% of orders</span></div>
             <div className="card stat"><span className="muted small">Mood</span><b>{d.sentiment.positive + d.sentiment.neutral + d.sentiment.negative ? sentimentEmoji(d.sentiment.avg > 0.15 ? 'positive' : d.sentiment.avg < -0.15 ? 'negative' : 'neutral') : '—'}</b>
               <span className="small muted">avg {d.sentiment.avg > 0 ? '+' : ''}{d.sentiment.avg}</span></div>
@@ -121,7 +155,7 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
   )
 }
 
-function ItemSheet({ item, onClose, onSave }: { item: Item; onClose: () => void; onSave: (i: Item) => void }) {
+export function ItemSheet({ item, onClose, onSave }: { item: Item; onClose: () => void; onSave: (i: Item) => void }) {
   const [f, setF] = useState(item)
   const set = <K extends keyof Item>(k: K, v: Item[K]) => setF(x => ({ ...x, [k]: v }))
   const num = (v: string) => (v === '' ? 0 : Math.max(0, Math.floor(Number(v)) || 0))
@@ -183,7 +217,7 @@ function Insights({ d }: { d: Dash }) {
   </>)
 }
 
-function StoreTab({ d, run, logout }: { d: Dash; run: (fn: string, a: Record<string, unknown>, ok?: string) => Promise<boolean>; logout: () => void }) {
+export function StoreTab({ d, run, logout }: { d: Dash; run: (fn: string, a: Record<string, unknown>, ok?: string) => Promise<boolean>; logout: () => void }) {
   const s = d.store
   const [f, setF] = useState({ name: s.name, tags: s.tags, description: s.description, pure_veg: s.pure_veg, eta: s.eta_min, open: s.open, phone: s.phone ?? '' })
   return (<>

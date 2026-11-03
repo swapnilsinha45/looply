@@ -13,12 +13,12 @@ const pickMime = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'au
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 type Props = {
-  orderId: string; token: string | null
+  orderId: string; token: string | null; auto?: boolean
   back: () => void; reset: (r: { n: 'home' }) => void
   setStudent: (s: Student) => void; say: (m: string) => void
 }
 
-export default function Voice({ orderId, token, back, reset, setStudent, say }: Props) {
+export default function Voice({ orderId, token, auto, back, reset, setStudent, say }: Props) {
   const [phase, setPhase] = useState<'idle' | 'rec' | 'transcribing' | 'review' | 'saving'>('idle')
   const [secs, setSecs] = useState(0)
   const [text, setText] = useState('')
@@ -105,6 +105,13 @@ export default function Voice({ orderId, token, back, reset, setStudent, say }: 
       if (s >= MAX_SECS) stop()
     }, 250)
   }
+
+  // arriving from "Tap to record": start listening straight away so recording takes a single tap
+  const autoStarted = useRef(false)
+  useEffect(() => {
+    if (auto && !autoStarted.current) { autoStarted.current = true; start() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const typeInstead = () => { setNote(''); setText(''); setLang(null); setPhase('review') }
   const rerecord = () => { setText(''); setNote(''); setLang(null); setPhase('idle') }

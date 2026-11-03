@@ -9,7 +9,7 @@ type Route =
   | { n: 'welcome' } | { n: 'studentLogin' } | { n: 'home' } | { n: 'stores' }
   | { n: 'menu'; store: Store } | { n: 'cart'; store: Store; items: MenuItem[] }
   | { n: 'paid'; orderId: string; total: number; discount: number; storeName: string }
-  | { n: 'voice'; orderId: string } | { n: 'orders' } | { n: 'rewards' } | { n: 'topup' } | { n: 'spend' }
+  | { n: 'voice'; orderId: string; auto?: boolean } | { n: 'orders' } | { n: 'rewards' } | { n: 'topup' } | { n: 'spend' }
   | { n: 'vendorLogin' } | { n: 'vendor' }
 
 const store = {
@@ -40,13 +40,16 @@ export default function App() {
         .then(s => { setStudent(s); setStack(st => (st.length === 1 && st[0].n === 'welcome' ? [{ n: 'home' }] : st)) })
         .catch(() => { store.set('looply_student', null); setToken(null) })
     }
-    if (vToken && !token) setStack(st => (st.length === 1 && st[0].n === 'welcome' ? [{ n: 'vendor' }] : st))
+    // the desktop dashboard has a shareable link: /#vendor
+    if (window.location.hash === '#vendor') setStack(vToken ? [{ n: 'vendor' }] : [{ n: 'welcome' }, { n: 'vendorLogin' }])
+    else if (vToken && !token) setStack(st => (st.length === 1 && st[0].n === 'welcome' ? [{ n: 'vendor' }] : st))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const logout = () => {
     store.set('looply_student', null); store.set('looply_vendor', null)
     setToken(null); setStudent(null); setVToken(null); reset({ n: 'welcome' })
+    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname)
   }
 
   const ctx = { token, student, setStudent, go, replace, reset, back, say, logout }
@@ -60,7 +63,7 @@ export default function App() {
       {route.n === 'menu' && student && <Menu {...ctx} student={student} shop={route.store} />}
       {route.n === 'cart' && student && <Cart {...ctx} student={student} shop={route.store} items={route.items} />}
       {route.n === 'paid' && student && <Paid {...ctx} student={student} r={route} />}
-      {route.n === 'voice' && <Voice orderId={route.orderId} token={token} back={back} reset={reset} setStudent={setStudent} say={say} />}
+      {route.n === 'voice' && <Voice orderId={route.orderId} auto={route.auto} token={token} back={back} reset={reset} setStudent={setStudent} say={say} />}
       {route.n === 'orders' && <Orders {...ctx} />}
       {route.n === 'rewards' && student && <Rewards {...ctx} student={student} />}
       {route.n === 'topup' && student && <TopUp {...ctx} student={student} />}
@@ -114,6 +117,7 @@ function Welcome({ go }: Ctx) {
           <span className="chev">›</span>
         </button>
         <div className="banner">Voice feedback is the king. 15 seconds after each order unlocks 5% off.</div>
+        <a className="linkbtn" href="#vendor" onClick={e => { e.preventDefault(); go({ n: 'vendorLogin' }) }}>Open vendor web dashboard ›</a>
       </div>
     </div>
   )
@@ -305,7 +309,7 @@ function Paid({ student, r, go, reset }: Ctx & { student: Student; r: Extract<Ro
         <h2>Say it in 15 seconds.<br />Win prizes &amp; offers.</h2>
         <div className="orb"><div><span className="core" /></div></div>
         <p className="small" style={{ margin: '0 0 16px' }}>Your voice note beats any star rating. We turn it into insights for the store, and you earn 5% off orders above ₹150.</p>
-        <button className="btn dk" onClick={() => go({ n: 'voice', orderId: r.orderId })}>● Tap to record (15 sec)</button>
+        <button className="btn dk" onClick={() => go({ n: 'voice', orderId: r.orderId, auto: true })}>● Tap to record (15 sec)</button>
       </div>
       <button className="linkbtn" style={{ color: '#aaa', marginBottom: 24 }} onClick={() => reset({ n: 'home' })}>Skip for now</button>
     </div>

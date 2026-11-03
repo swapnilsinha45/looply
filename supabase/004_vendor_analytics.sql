@@ -1,0 +1,4 @@
+-- vendor_analytics(p_token): everything the desktop vendor console shows (IST days/hours).
+-- Returns: orders_today, revenue_today, *_yesterday, avg_order_value, orders_total, notes_total, hourly,
+-- top_products, daily_sentiment, hourly_sentiment, by_product, by_theme, sentiment, rewards, orders (last 100), notes (last 60).
+-- The full function body is the one applied to the project as migration "vendor_analytics".
