@@ -183,3 +183,14 @@
 .fb-trans span { display: inline-block; margin-right: 8px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; background: #2b4ff6; color: #fff; padding: 2px 7px; border-radius: 6px; }
 .fb-err { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--red); }
 .fb-card.ignored { opacity: .75; background: #f6f3ea; border-style: dashed; }
+
+/* ---------- reviews still to record ---------- */
+.pending { display: flex; flex-direction: column; gap: 10px; }
+.pending-card { display: flex; align-items: center; gap: 12px; background: #fff; border: 1.5px solid var(--yellow); border-radius: 18px; padding: 12px 14px; box-shadow: 0 1px 2px rgba(35,31,20,.04); }
+.pc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pc-info b { font-size: 15px; }
+.pc-info .pc-items { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-reward { font-size: 11px; font-weight: 800; color: var(--amber); }
+.pc-btn { background: var(--ink); color: var(--yellow); font-weight: 800; font-size: 13px; padding: 11px 16px; border-radius: 14px; white-space: nowrap; }
+.review-btn { margin-top: 10px; width: 100%; background: var(--yellow); color: var(--ink); font-weight: 800; font-size: 14px; padding: 11px; border-radius: 12px; display: flex; justify-content: center; align-items: baseline; gap: 8px; }
+.review-btn small { font-weight: 700; font-size: 11px; opacity: .7; }

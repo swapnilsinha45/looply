@@ -5,6 +5,7 @@ import Vendor from './Vendor'
 import { StudentAuth, VendorAuth } from './Auth'
 import RewardsScreen, { rewardEffect } from './Rewards'
 import Gateway from './Gateway'
+import { PendingReviews } from './Pending'
 import { Header, errMsg, rupee, store } from './ui'
 import type { Favourite, MenuItem, OrderRow, Reward, RewardsHub, Store, Student } from './api'
 
@@ -111,7 +112,9 @@ const TIER_COLOR: Record<string, string> = { Regular: '#8a8372', Silver: '#8e9aa
 function Home({ student, token, go, logout }: Ctx & { student: Student }) {
   const [favs, setFavs] = useState<Favourite[] | null>(null)
   const [hub, setHub] = useState<RewardsHub | null>(null)
+  const [unreviewed, setUnreviewed] = useState<OrderRow[]>([])
   useEffect(() => {
+    rpc<OrderRow[]>('my_orders', { p_token: token }).then(rows => setUnreviewed(rows.filter(o => !o.has_note).slice(0, 2))).catch(() => {})
     rpc<Favourite[]>('my_favourites', { p_token: token }).then(setFavs).catch(() => setFavs([]))
     rpc<RewardsHub>('my_rewards', { p_token: token }).then(setHub).catch(() => {})
   }, [token, student.wallet, student.notes_count])
@@ -152,6 +155,8 @@ function Home({ student, token, go, logout }: Ctx & { student: Student }) {
             <span>{left <= 0 ? 'Coupon unlocked!' : `${left} voice note${left === 1 ? '' : 's'} to your next 5% off coupon`}</span>
           </div>
         </button>
+
+        <PendingReviews orders={unreviewed} onRecord={id => go({ n: 'voice', orderId: id, auto: true })} />
 
         {favs && favs.length > 0 && (<>
           <div className="section-title">{favs.some(f => !f.popular) ? 'Your favourites' : 'Popular on campus'}</div>
@@ -376,7 +381,7 @@ function Paid({ student, r, go, reset }: Ctx & { student: Student; r: Extract<Ro
   )
 }
 
-function Orders({ back, token }: Ctx) {
+function Orders({ back, token, go }: Ctx) {
   const [rows, setRows] = useState<OrderRow[] | null>(null)
   const [err, setErr] = useState('')
   useEffect(() => { rpc<OrderRow[]>('my_orders', { p_token: token }).then(setRows).catch(e => setErr(errMsg(e))) }, [token])
@@ -391,7 +396,8 @@ function Orders({ back, token }: Ctx) {
             <div className="qrow"><div><b>{o.store_name}</b><div className="muted small">#{o.seq} · {new Date(o.created_at).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div></div>
               <div className="r"><b>{rupee(o.total)}</b><span className={`status ${o.status}`}>{o.status}</span></div></div>
             <div className="small" style={{ marginTop: 6 }}>{o.items}</div>
-            {o.has_note && <span className="note">Voice note sent</span>}
+            {o.has_note ? <span className="note">Voice note sent</span>
+              : <button className="review-btn" onClick={() => go({ n: 'voice', orderId: o.id, auto: true })}>● Record review <small>earns a scratch card</small></button>}
           </div>
         ))}
       </div>
