@@ -172,3 +172,14 @@
 .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
 .c-grid2 .stack > * + * { margin-top: 16px; }
 .c-card .fb-section .fb-card { margin: 0; }
+
+/* ---------- feedback actions: translate / ignore ---------- */
+.fb-actions { margin-left: auto; display: inline-flex; gap: 6px; }
+.fb-actions button { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+.fb-actions button:hover:not(:disabled) { background: var(--yellow-soft); }
+.fb-actions button.ignore { color: var(--muted); }
+.fb-actions button:disabled { opacity: .55; cursor: default; }
+.fb-trans { margin: 0 0 8px; padding: 8px 10px; border-radius: 10px; background: #eef2ff; color: #25308a; font-size: 14px; line-height: 1.45; }
+.fb-trans span { display: inline-block; margin-right: 8px; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; background: #2b4ff6; color: #fff; padding: 2px 7px; border-radius: 6px; }
+.fb-err { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--red); }
+.fb-card.ignored { opacity: .75; background: #f6f3ea; border-style: dashed; }

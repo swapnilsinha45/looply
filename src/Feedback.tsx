@@ -30,10 +30,31 @@ const ago = (iso: string) => {
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
 }
 
-export function ReviewCard({ n, compact }: { n: Note; compact?: boolean }) {
+// Vendor actions on one piece of feedback, supplied by the dashboard (which holds the session).
+export type FeedbackActs = {
+  translate: (id: string) => Promise<string>
+  ignore: (id: string, ignored: boolean) => Promise<void>
+}
+
+export function ReviewCard({ n, compact, act, ignored }: { n: Note; compact?: boolean; act?: FeedbackActs; ignored?: boolean }) {
+  const [tr, setTr] = useState<string | null>(n.translation)
+  const [show, setShow] = useState(!!n.translation)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
   const sev = n.severity && n.severity !== 'none' ? n.severity : null
+  const english = /^english$/i.test(n.language ?? '')
+
+  const translate = async () => {
+    if (tr) { setShow(v => !v); return }
+    setBusy(true); setErr('')
+    try { setTr(await act!.translate(n.id)); setShow(true) }
+    catch (e) { setErr(e instanceof Error ? e.message : 'Could not translate') }
+    finally { setBusy(false) }
+  }
+  const ignore = async () => { setBusy(true); try { await act!.ignore(n.id, !ignored) } finally { setBusy(false) } }
+
   return (
-    <div className={`fb-card ${isBad(n) ? 'bad' : ''}`}>
+    <div className={`fb-card ${isBad(n) && !ignored ? 'bad' : ''} ${ignored ? 'ignored' : ''}`}>
       <div className="fb-top">
         <span>{sentimentEmoji(n.sentiment)} <b style={{ textTransform: 'capitalize' }}>{n.sentiment}</b>
           {sev && <span className={`sev ${sev}`}>{SEV[sev].label}</span>}
@@ -42,16 +63,24 @@ export function ReviewCard({ n, compact }: { n: Note; compact?: boolean }) {
       </div>
       {n.summary && <p className="fb-summary">{n.summary}</p>}
       <p className={`fb-quote ${compact ? 'small' : ''}`}>“{n.transcript}”</p>
+      {tr && show && <p className="fb-trans"><span>English</span>{tr}</p>}
+      {err && <div className="fb-err">{err}</div>}
       <div className="fb-tags">
         {n.flags.map(f => <span key={f} className={`flag ${FLAG[f]?.good ? 'good' : 'bad'}`}>{FLAG[f]?.label ?? f}</span>)}
         {n.language && <span className="flag lang">{n.language[0].toUpperCase() + n.language.slice(1)}</span>}
         {n.items && <span className="muted small">Ordered: {n.items}</span>}
+        {act && (
+          <span className="fb-actions">
+            {!english && <button onClick={translate} disabled={busy} aria-label="Translate to English">{busy && !tr ? 'Translating…' : tr ? (show ? 'Hide translation' : 'Show translation') : 'Translate'}</button>}
+            <button className={ignored ? '' : 'ignore'} onClick={ignore} disabled={busy} aria-label={ignored ? 'Restore feedback' : 'Ignore feedback'}>{ignored ? 'Restore' : 'Ignore'}</button>
+          </span>
+        )}
       </div>
     </div>
   )
 }
 
-export function NeedsAttention({ notes, limit = 4 }: { notes: Note[]; limit?: number }) {
+export function NeedsAttention({ notes, limit = 4, act }: { notes: Note[]; limit?: number; act?: FeedbackActs }) {
   const [all, setAll] = useState(false)
   const bad = badReviews(notes)
   const critical = bad.filter(n => sevRank(n) >= 4).length
@@ -63,8 +92,21 @@ export function NeedsAttention({ notes, limit = 4 }: { notes: Note[]; limit?: nu
         <span className="muted small">{bad.length === 0 ? 'Nothing to fix right now' : `${bad.length} bad review${bad.length === 1 ? '' : 's'}${critical ? ` · ${critical} critical` : ''}`}</span>
       </div>
       {bad.length === 0 && <div className="fb-empty">No bad reviews. Keep it up.</div>}
-      {shown.map(n => <ReviewCard key={n.id} n={n} />)}
+      {shown.map(n => <ReviewCard key={n.id} n={n} act={act} />)}
       {bad.length > limit && <button className="c-link" onClick={() => setAll(v => !v)}>{all ? 'Show fewer' : `Show all ${bad.length}`}</button>}
+    </div>
+  )
+}
+
+// Feedback the vendor marked irrelevant. It is left out of every count and chart, and can be restored.
+export function IgnoredList({ notes, act }: { notes: Note[]; act: FeedbackActs }) {
+  const [open, setOpen] = useState(false)
+  if (notes.length === 0) return null
+  return (
+    <div className="fb-section">
+      <button className="c-link" style={{ marginTop: 0 }} onClick={() => setOpen(v => !v)}>{open ? 'Hide' : 'Show'} ignored feedback ({notes.length})</button>
+      {open && <div className="muted small">Ignored feedback is not counted in your sentiment, themes or charts.</div>}
+      {open && notes.map(n => <ReviewCard key={n.id} n={n} act={act} ignored compact />)}
     </div>
   )
 }

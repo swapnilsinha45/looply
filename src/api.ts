@@ -53,10 +53,11 @@ export type Favourite = {
 }
 export type Feedback = {
   notes: {
-    id: string; transcript: string; summary: string | null; sentiment: 'positive' | 'neutral' | 'negative'; sentiment_score: number
+    id: string; transcript: string; summary: string | null; translation: string | null; sentiment: 'positive' | 'neutral' | 'negative'; sentiment_score: number
     category: string | null; severity: string | null; flags: string[]; topics: string[]; language: string | null; method: string | null
     created_at: string; seq: number | null; student: string; items: string | null
   }[]
+  ignored: Feedback['notes']
   categories: Record<string, number>
   flags: Record<string, number>
 }

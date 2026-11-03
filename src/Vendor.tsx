@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Console from './Console'
 import type { Feedback } from './api'
-import { NeedsAttention, ReviewCard, CategoryBars } from './Feedback'
+import { NeedsAttention, ReviewCard, CategoryBars, IgnoredList } from './Feedback'
+import type { FeedbackActs } from './Feedback'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
 
@@ -76,8 +77,26 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
   const run = async (fn: string, args: Record<string, unknown>, ok?: string) => {
     try { await rpc(fn, { p_token: token, ...args }); if (ok) say(ok); await load(); return true } catch (e) { say(errMsg(e)); return false }
   }
+  const act: FeedbackActs = {
+    translate: async id => {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/translate`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string },
+        body: JSON.stringify({ token, note_id: id }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || 'Translation failed')
+      return data.translation as string
+    },
+    ignore: async (id, ignored) => {
+      try {
+        await rpc('vendor_ignore_note', { p_token: token, p_id: id, p_ignored: ignored })
+        say(ignored ? 'Feedback ignored. You can restore it under Ignored feedback.' : 'Feedback restored')
+        await load()
+      } catch (e) { say(errMsg(e)) }
+    },
+  }
   if (!d || !a || !f) return <div className="center">{err || 'Loading dashboard…'}</div>
-  if (wide && view === 'desktop') return <Console d={d} a={a} f={f} run={run} logout={logout} onPhone={() => setView('phone')} />
+  if (wide && view === 'desktop') return <Console d={d} a={a} f={f} act={act} run={run} logout={logout} onPhone={() => setView('phone')} />
 
   const advance = (id: string, status: string) => run('vendor_set_status', { p_order: id, p_status: NEXT[status] })
   const restock = (i: Item) => run('vendor_upsert_item', { p_id: i.id, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock + 50, p_active: i.active }, `${i.name} restocked +50`)
@@ -146,7 +165,7 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
           ))}
         </>)}
 
-        {tab === 'insights' && <Insights d={d} f={f} />}
+        {tab === 'insights' && <Insights d={d} f={f} act={act} />}
         {tab === 'store' && <StoreTab d={d} run={run} logout={logout} />}
       </div>
 
@@ -190,12 +209,12 @@ export function ItemSheet({ item, onClose, onSave }: { item: Item; onClose: () =
   )
 }
 
-function Insights({ d, f }: { d: Dash; f: Feedback }) {
+function Insights({ d, f, act }: { d: Dash; f: Feedback; act: FeedbackActs }) {
   const s = d.sentiment
   const total = s.positive + s.neutral + s.negative
   const w = (n: number) => `${total ? (n / total) * 100 : 0}%`
   return (<>
-    <NeedsAttention notes={f.notes} limit={3} />
+    <NeedsAttention notes={f.notes} limit={3} act={act} />
     <div className="card">
       <b>Voice sentiment</b>
       {total === 0 ? <div className="muted small" style={{ marginTop: 6 }}>No voice notes yet. Reviews students send will be analysed here.</div> : (<>
@@ -215,7 +234,8 @@ function Insights({ d, f }: { d: Dash; f: Feedback }) {
     </div>}
     <b>Latest reviews</b>
     {f.notes.length === 0 && <div className="muted center">Nothing here yet.</div>}
-    {f.notes.slice(0, 15).map(n => <ReviewCard key={n.id} n={n} compact />)}
+    {f.notes.slice(0, 15).map(n => <ReviewCard key={n.id} n={n} compact act={act} />)}
+    <IgnoredList notes={f.ignored} act={act} />
   </>)
 }
 

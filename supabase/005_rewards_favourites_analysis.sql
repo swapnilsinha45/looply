@@ -3,3 +3,6 @@
 -- orders.cashback; helper functions _grant/_issue_scratch/_tier; place_order(p_reward); save_voice_note (analysis fields,
 -- scratch card, 5-note milestone coupon); my_rewards; reveal_reward; my_favourites; vendor_feedback; welcome coupon on signup.
 -- Edge functions: transcribe (Groq Whisper), analyze (Groq gpt-oss, aspect-based sentiment in any language).
+-- feedback_translate_ignore (applied): voice_notes.translation_en / ignored / ignored_at; view vn_visible (non-ignored notes);
+-- vendor_dashboard + vendor_analytics re-pointed at vn_visible; vendor_feedback returns translation + ignored list;
+-- vendor_ignore_note(token, id, ignored). Edge function `translate` (vendor token, cached per note).

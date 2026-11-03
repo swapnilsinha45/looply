@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import type { Analytics, Dash, Item } from './Vendor'
 import type { Feedback } from './api'
-import { CATEGORY, CategoryBars, FlagBars, NeedsAttention, ReviewCard } from './Feedback'
+import { CATEGORY, CategoryBars, FlagBars, IgnoredList, NeedsAttention, ReviewCard } from './Feedback'
+import type { FeedbackActs } from './Feedback'
 import { ItemSheet, StoreTab } from './Vendor'
 import { sentimentEmoji } from './sentiment'
 
 type Run = (fn: string, args: Record<string, unknown>, ok?: string) => Promise<boolean>
-type Props = { d: Dash; a: Analytics; f: Feedback; run: Run; logout: () => void; onPhone: () => void; initial?: Section }
+type Props = { d: Dash; a: Analytics; f: Feedback; act: FeedbackActs; run: Run; logout: () => void; onPhone: () => void; initial?: Section }
 type Section = 'overview' | 'orders' | 'products' | 'inventory' | 'insights' | 'sentiment' | 'rewards' | 'settings'
 
 const rupee = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`
@@ -31,7 +32,7 @@ const Delta = ({ now, before }: { now: number; before: number }) => {
   return <span className={`c-delta ${p >= 0 ? 'up' : 'down'}`}>{p >= 0 ? '▲' : '▼'} {Math.abs(p)}% vs yesterday</span>
 }
 
-export default function Console({ d, a, f, run, logout, onPhone, initial }: Props) {
+export default function Console({ d, a, f, act, run, logout, onPhone, initial }: Props) {
   const [sec, setSec] = useState<Section>(initial ?? 'overview')
   const [editing, setEditing] = useState<Item | null>(null)
   const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg: true, stock: 20, active: true }
@@ -156,8 +157,8 @@ export default function Console({ d, a, f, run, logout, onPhone, initial }: Prop
           </div>
         )}
 
-        {sec === 'insights' && <Insights f={f} />}
-        {sec === 'sentiment' && <Sentiment a={a} f={f} />}
+        {sec === 'insights' && <Insights f={f} act={act} />}
+        {sec === 'sentiment' && <Sentiment a={a} f={f} act={act} />}
 
         {sec === 'rewards' && (<>
           <div className="c-stats">
@@ -242,7 +243,7 @@ function OrdersTable({ a, advance }: { a: Analytics; advance: (id: string, statu
   </>)
 }
 
-function Insights({ f }: { f: Feedback }) {
+function Insights({ f, act }: { f: Feedback; act: FeedbackActs }) {
   const [sent, setSent] = useState('all')
   const [cat, setCat] = useState('all')
   const cats = Array.from(new Set(f.notes.map(n => n.category).filter(Boolean))) as string[]
@@ -254,11 +255,12 @@ function Insights({ f }: { f: Feedback }) {
       {['all', ...cats].map(t => <button key={t} className={cat === t ? 'on' : ''} onClick={() => setCat(t)}>{t === 'all' ? 'All types' : CATEGORY[t]?.label ?? t}</button>)}
     </div>
     {rows.length === 0 && <div className="c-card muted center">No voice notes match. They appear here as soon as students send them.</div>}
-    <div className="c-notes">{rows.map(n => <ReviewCard key={n.id} n={n} />)}</div>
+    <div className="c-notes">{rows.map(n => <ReviewCard key={n.id} n={n} act={act} />)}</div>
+    <IgnoredList notes={f.ignored} act={act} />
   </>)
 }
 
-function Sentiment({ a, f }: { a: Analytics; f: Feedback }) {
+function Sentiment({ a, f, act }: { a: Analytics; f: Feedback; act: FeedbackActs }) {
   const s = a.sentiment
   const all = s.positive + s.neutral + s.negative
   const pct = (n: number) => (all ? Math.round((n / all) * 100) : 0)
@@ -271,7 +273,7 @@ function Sentiment({ a, f }: { a: Analytics; f: Feedback }) {
     </div>
 
     <div className="c-grid2">
-      <div className="c-card"><NeedsAttention notes={f.notes} limit={4} /></div>
+      <div className="c-card"><NeedsAttention notes={f.notes} limit={4} act={act} /></div>
       <div className="stack">
         <div className="c-card"><b className="c-title">Types of feedback</b><div className="muted small" style={{ marginBottom: 10 }}>Praise, complaints, suggestions and questions</div><CategoryBars categories={f.categories} /></div>
         <div className="c-card"><b className="c-title">What went wrong</b><div className="muted small" style={{ marginBottom: 6 }}>Issues students flagged</div><FlagBars flags={f.flags} good={false} /></div>
