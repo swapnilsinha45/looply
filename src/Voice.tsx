@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rpc, supabase } from './api'
 import type { Student } from './api'
 import { analyse, sentimentEmoji } from './sentiment'
+import { deepAnalyse } from './analysis'
 
 const TOPICS = ['Taste', 'Wait time', 'Price', 'Hygiene', 'Staff', 'Stock']
 const MAX_SECS = 15
@@ -14,12 +15,13 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 type Props = {
   orderId: string; token: string | null; auto?: boolean
-  back: () => void; reset: (r: { n: 'home' }) => void
+  back: () => void; reset: (r: { n: 'home' } | { n: 'rewards'; open?: string; milestone?: boolean }) => void
   setStudent: (s: Student) => void; say: (m: string) => void
 }
 
 export default function Voice({ orderId, token, auto, back, reset, setStudent, say }: Props) {
   const [phase, setPhase] = useState<'idle' | 'rec' | 'transcribing' | 'review' | 'saving'>('idle')
+  const [stage, setStage] = useState('')
   const [secs, setSecs] = useState(0)
   const [text, setText] = useState('')
   const [lang, setLang] = useState<string | null>(null)
@@ -126,14 +128,18 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
         const up = await supabase.storage.from('voice-notes').upload(p, blob.current, { contentType: blob.current.type.split(';')[0] })
         if (!up.error) path = p // audio is best-effort; the text review is what counts
       }
+      setStage('Reading your review…')
+      const an = await deepAnalyse(text.trim(), token) // AI read (any language); falls back to the word list if offline
+      setStage('Saving…')
       const s = await rpc<Student>('save_voice_note', {
         p_token: token, p_order: orderId, p_duration: duration.current || Math.min(MAX_SECS, Math.max(1, Math.round(words / 2.5))),
-        p_topics: topics, p_path: path, p_transcript: text.trim(),
-        p_sentiment: result.label, p_score: result.score, p_aspects: result.aspects, p_language: lang?.toLowerCase() ?? null,
+        p_topics: Array.from(new Set([...picked, ...an.topics])), p_path: path, p_transcript: text.trim(),
+        p_sentiment: an.sentiment, p_score: an.score, p_aspects: an.aspects, p_language: (an.language ?? lang)?.toLowerCase() ?? null,
+        p_category: an.category, p_severity: an.severity, p_flags: an.flags, p_summary: an.summary, p_method: an.method,
       })
       setStudent(s)
-      say(s.notes_count >= 5 ? 'Review sent. 5% offer unlocked!' : `Review sent (${s.notes_count}/5 notes)`)
-      reset({ n: 'home' })
+      say(s.milestone ? '5% off coupon unlocked, plus a scratch card!' : 'Review sent. You earned a scratch card!')
+      reset({ n: 'rewards', open: s.scratch_id, milestone: s.milestone })
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not save review'); setPhase('review') }
   }
 
@@ -198,13 +204,13 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
             {TOPICS.map(t => <button key={t} className={topics.includes(t) ? 'on' : ''} onClick={() => setPicked(a => (a.includes(t) ? a.filter(x => x !== t) : [...a, t]))}>{t}</button>)}
           </div>
           {err && <div className="err">{err}</div>}
-          <button className="btn" disabled={phase === 'saving' || words < 3} onClick={submit}>{phase === 'saving' ? 'Sending…' : words < 3 ? 'Add a few more words to send' : 'Send review'}</button>
+          <button className="btn" disabled={phase === 'saving' || words < 3} onClick={submit}>{phase === 'saving' ? (stage || 'Sending…') : words < 3 ? 'Add a few more words to send' : 'Send review'}</button>
           <button className="btn ghost" style={{ color: '#fff', borderColor: '#4a4430' }} disabled={phase === 'saving'} onClick={rerecord}>Re-record</button>
         </div>
       )}
 
       <div style={{ flex: 1 }} />
-      <div className="reward" style={{ marginTop: 16 }}>Reward: 5% off above ₹150 after your 5th note.</div>
+      <div className="reward" style={{ marginTop: 16 }}>Every note earns a scratch card. Every 5th note unlocks 5% off.</div>
       {(phase === 'idle' || phase === 'review') && <button className="linkbtn" style={{ color: '#aaa', marginBottom: 20 }} onClick={() => reset({ n: 'home' })}>Skip</button>}
     </div>
   )

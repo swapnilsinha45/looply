@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import type { Analytics, Dash, Item } from './Vendor'
+import type { Feedback } from './api'
+import { CATEGORY, CategoryBars, FlagBars, NeedsAttention, ReviewCard } from './Feedback'
 import { ItemSheet, StoreTab } from './Vendor'
 import { sentimentEmoji } from './sentiment'
 
 type Run = (fn: string, args: Record<string, unknown>, ok?: string) => Promise<boolean>
-type Props = { d: Dash; a: Analytics; run: Run; logout: () => void; initial?: Section }
+type Props = { d: Dash; a: Analytics; f: Feedback; run: Run; logout: () => void; onPhone: () => void; initial?: Section }
 type Section = 'overview' | 'orders' | 'products' | 'inventory' | 'insights' | 'sentiment' | 'rewards' | 'settings'
 
 const rupee = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`
@@ -14,7 +16,7 @@ const NAV: { id: Section; label: string; group?: string }[] = [
   { id: 'rewards', label: 'Rewards' }, { id: 'settings', label: 'Settings' },
 ]
 const SUB: Record<Section, string> = {
-  overview: 'live from campus orders and voice notes', orders: 'all orders, newest first', products: 'your menu and SKUs',
+  overview: 'live from campus orders and voice notes', orders: 'active orders first, done ones move to the Done tab', products: 'your menu and SKUs',
   inventory: 'stock levels and restocking', insights: 'what students actually said, in their own words',
   sentiment: 'how students feel, scored from every voice note', rewards: 'voice notes that earn students 5% off', settings: 'store profile and account',
 }
@@ -29,7 +31,7 @@ const Delta = ({ now, before }: { now: number; before: number }) => {
   return <span className={`c-delta ${p >= 0 ? 'up' : 'down'}`}>{p >= 0 ? '▲' : '▼'} {Math.abs(p)}% vs yesterday</span>
 }
 
-export default function Console({ d, a, run, logout, initial }: Props) {
+export default function Console({ d, a, f, run, logout, onPhone, initial }: Props) {
   const [sec, setSec] = useState<Section>(initial ?? 'overview')
   const [editing, setEditing] = useState<Item | null>(null)
   const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg: true, stock: 20, active: true }
@@ -63,6 +65,7 @@ export default function Console({ d, a, run, logout, initial }: Props) {
         <header className="c-head">
           <div><h1>{NAV.find(n => n.id === sec)!.label}</h1><div className="muted">{today} · {SUB[sec]}</div></div>
           <div className="c-head-r">
+            <button className="c-btn ghost" onClick={onPhone}>Phone view</button>
             <span className={`c-pill ${d.store.open ? 'ok' : 'off'}`}>{d.store.open ? '● Accepting orders' : '● Closed'}</span>
             {sec === 'products' && <button className="c-btn" onClick={() => setEditing({ ...blank })}>+ Add product</button>}
           </div>
@@ -153,8 +156,8 @@ export default function Console({ d, a, run, logout, initial }: Props) {
           </div>
         )}
 
-        {sec === 'insights' && <Insights a={a} />}
-        {sec === 'sentiment' && <Sentiment a={a} />}
+        {sec === 'insights' && <Insights f={f} />}
+        {sec === 'sentiment' && <Sentiment a={a} f={f} />}
 
         {sec === 'rewards' && (<>
           <div className="c-stats">
@@ -212,17 +215,18 @@ function StockInput({ value, onSave }: { value: number; onSave: (n: number) => v
 }
 
 function OrdersTable({ a, advance }: { a: Analytics; advance: (id: string, status: string) => void }) {
-  const [f, setF] = useState<'all' | 'new' | 'preparing' | 'ready' | 'done' | 'voice'>('all')
+  const [f, setF] = useState<'active' | 'new' | 'preparing' | 'ready' | 'done' | 'voice' | 'all'>('active')
   const n = (s: string) => a.orders.filter(o => o.status === s).length
-  const rows = a.orders.filter(o => (f === 'all' ? true : f === 'voice' ? o.has_note : o.status === f))
-  const chips: [typeof f, string][] = [['all', `All ${a.orders.length}`], ['new', `New ${n('new')}`], ['preparing', `Preparing ${n('preparing')}`], ['ready', `Ready ${n('ready')}`], ['done', `Done ${n('done')}`], ['voice', `With voice note ${a.orders.filter(o => o.has_note).length}`]]
+  const rows = a.orders.filter(o => (f === 'all' ? true : f === 'active' ? o.status !== 'done' : f === 'voice' ? o.has_note : o.status === f))
+  const active = a.orders.filter(o => o.status !== 'done').length
+  const chips: [typeof f, string][] = [['active', `Active ${active}`], ['new', `New ${n('new')}`], ['preparing', `Preparing ${n('preparing')}`], ['ready', `Ready ${n('ready')}`], ['done', `Done ${n('done')}`], ['voice', `With voice note ${a.orders.filter(o => o.has_note).length}`], ['all', `All ${a.orders.length}`]]
   return (<>
     <div className="c-chips">{chips.map(([k, l]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{l}</button>)}</div>
     <div className="c-card flush">
       <table className="c-table">
         <thead><tr><th>Order</th><th>Student</th><th>Items</th><th>Amount</th><th>Time</th><th>Status</th><th /></tr></thead>
         <tbody>
-          {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 24, textAlign: 'center' }}>No orders here yet. New orders appear within 5 seconds.</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 24, textAlign: 'center' }}>Nothing here. Orders marked done leave Active, and new ones appear within 5 seconds.</td></tr>}
           {rows.map(o => (
             <tr key={o.id}>
               <td><b>#{o.seq}</b></td><td>{o.student}</td>
@@ -238,32 +242,23 @@ function OrdersTable({ a, advance }: { a: Analytics; advance: (id: string, statu
   </>)
 }
 
-function Insights({ a }: { a: Analytics }) {
+function Insights({ f }: { f: Feedback }) {
   const [sent, setSent] = useState('all')
-  const [theme, setTheme] = useState('all')
-  const themes = Array.from(new Set(a.notes.flatMap(n => n.topics)))
-  const rows = a.notes.filter(n => (sent === 'all' || n.sentiment === sent) && (theme === 'all' || n.topics.includes(theme)))
+  const [cat, setCat] = useState('all')
+  const cats = Array.from(new Set(f.notes.map(n => n.category).filter(Boolean))) as string[]
+  const rows = f.notes.filter(n => (sent === 'all' || n.sentiment === sent) && (cat === 'all' || n.category === cat))
   return (<>
     <div className="c-chips">
       {['all', 'positive', 'neutral', 'negative'].map(s => <button key={s} className={sent === s ? 'on' : ''} onClick={() => setSent(s)}>{s === 'all' ? 'All feelings' : `${sentimentEmoji(s)} ${s[0].toUpperCase() + s.slice(1)}`}</button>)}
       <span className="c-sep" />
-      {['all', ...themes].map(t => <button key={t} className={theme === t ? 'on' : ''} onClick={() => setTheme(t)}>{t === 'all' ? 'All themes' : t}</button>)}
+      {['all', ...cats].map(t => <button key={t} className={cat === t ? 'on' : ''} onClick={() => setCat(t)}>{t === 'all' ? 'All types' : CATEGORY[t]?.label ?? t}</button>)}
     </div>
     {rows.length === 0 && <div className="c-card muted center">No voice notes match. They appear here as soon as students send them.</div>}
-    <div className="c-notes">
-      {rows.map(n => (
-        <div key={n.id} className="c-card">
-          <div className="c-between"><span>{sentimentEmoji(n.sentiment)} <b style={{ textTransform: 'capitalize' }}>{n.sentiment}</b> <span className="muted small">{n.sentiment_score > 0 ? '+' : ''}{Math.round(n.sentiment_score * 100)}</span></span>
-            <span className="muted small">{n.student}{n.seq ? ` · #${n.seq}` : ''} · {new Date(n.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span></div>
-          <p className="c-quote">“{n.transcript}”</p>
-          <div className="c-tags">{n.language && <span className="c-chip lang">{n.language[0].toUpperCase() + n.language.slice(1)}</span>}{n.topics.map(t => <span key={t} className="chip-s">{t}</span>)}{n.items && <span className="muted small">Ordered: {n.items}</span>}</div>
-        </div>
-      ))}
-    </div>
+    <div className="c-notes">{rows.map(n => <ReviewCard key={n.id} n={n} />)}</div>
   </>)
 }
 
-function Sentiment({ a }: { a: Analytics }) {
+function Sentiment({ a, f }: { a: Analytics; f: Feedback }) {
   const s = a.sentiment
   const all = s.positive + s.neutral + s.negative
   const pct = (n: number) => (all ? Math.round((n / all) * 100) : 0)
@@ -271,9 +266,19 @@ function Sentiment({ a }: { a: Analytics }) {
     <div className="c-stats">
       <div className="c-card"><span className="muted">Positive</span><b>{s.positive} · {pct(s.positive)}%</b></div>
       <div className="c-card"><span className="muted">Neutral</span><b>{s.neutral} · {pct(s.neutral)}%</b></div>
-      <div className="c-card"><span className="muted">Negative</span><b>{s.negative} · {pct(s.negative)}%</b></div>
+      <div className="c-card"><span className="muted">Negative</span><b className={s.negative ? 'down' : ''}>{s.negative} · {pct(s.negative)}%</b></div>
       <div className="c-card"><span className="muted">Net sentiment</span><b className={s.net >= 0 ? 'up' : 'down'}>{s.net > 0 ? '+' : ''}{s.net}</b><span className="c-delta muted">−100 to +100</span></div>
     </div>
+
+    <div className="c-grid2">
+      <div className="c-card"><NeedsAttention notes={f.notes} limit={4} /></div>
+      <div className="stack">
+        <div className="c-card"><b className="c-title">Types of feedback</b><div className="muted small" style={{ marginBottom: 10 }}>Praise, complaints, suggestions and questions</div><CategoryBars categories={f.categories} /></div>
+        <div className="c-card"><b className="c-title">What went wrong</b><div className="muted small" style={{ marginBottom: 6 }}>Issues students flagged</div><FlagBars flags={f.flags} good={false} /></div>
+        <div className="c-card"><b className="c-title">What went right</b><div className="muted small" style={{ marginBottom: 6 }}>Praise students gave</div><FlagBars flags={f.flags} good /></div>
+      </div>
+    </div>
+
     <div className="c-grid2">
       <div className="c-card"><b className="c-title">Net sentiment, last 7 days</b><div className="muted small">Daily score from −100 to +100</div><Line data={a.daily_sentiment} /></div>
       <div className="c-card"><b className="c-title">Net sentiment by hour</b><div className="muted small">When the mood dips (all time)</div>

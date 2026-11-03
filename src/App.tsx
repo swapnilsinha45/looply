@@ -3,21 +3,17 @@ import { rpc, supabase } from './api'
 import Voice from './Voice'
 import Vendor from './Vendor'
 import { StudentAuth, VendorAuth } from './Auth'
-import type { Dashboard, MenuItem, OrderRow, Store, Student } from './api'
+import RewardsScreen, { rewardEffect } from './Rewards'
+import Gateway from './Gateway'
+import { Header, errMsg, rupee, store } from './ui'
+import type { Favourite, MenuItem, OrderRow, Reward, RewardsHub, Store, Student } from './api'
 
 type Route =
   | { n: 'welcome' } | { n: 'studentLogin' } | { n: 'home' } | { n: 'stores' }
-  | { n: 'menu'; store: Store } | { n: 'cart'; store: Store; items: MenuItem[] }
-  | { n: 'paid'; orderId: string; total: number; discount: number; storeName: string }
-  | { n: 'voice'; orderId: string; auto?: boolean } | { n: 'orders' } | { n: 'rewards' } | { n: 'topup' } | { n: 'spend' }
-  | { n: 'vendorLogin' } | { n: 'vendor' }
-
-const store = {
-  get(k: string) { try { return localStorage.getItem(k) } catch { return null } },
-  set(k: string, v: string | null) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v) } catch { /* private mode */ } },
-}
-const rupee = (n: number) => `₹${n.toLocaleString('en-IN')}`
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong')
+  | { n: 'menu'; store: Store; prefill?: { item_id: string; qty: number }[] } | { n: 'cart'; store: Store; items: MenuItem[] }
+  | { n: 'paid'; orderId: string; total: number; discount: number; cashback: number; storeName: string }
+  | { n: 'voice'; orderId: string; auto?: boolean } | { n: 'orders' } | { n: 'rewards'; open?: string; milestone?: boolean } | { n: 'topup' } | { n: 'spend' }
+  | { n: 'vendorLogin'; desktop?: boolean } | { n: 'vendor'; desktop?: boolean }
 
 export default function App() {
   const [stack, setStack] = useState<Route[]>([{ n: 'welcome' }])
@@ -60,16 +56,17 @@ export default function App() {
       {route.n === 'studentLogin' && <StudentAuth back={back} onAuth={(t, s) => { store.set('looply_student', t); setToken(t); setStudent(s); reset({ n: 'home' }) }} />}
       {route.n === 'home' && student && <Home {...ctx} student={student} />}
       {route.n === 'stores' && <Stores {...ctx} />}
-      {route.n === 'menu' && student && <Menu {...ctx} student={student} shop={route.store} />}
+      {route.n === 'menu' && student && <Menu {...ctx} student={student} shop={route.store} prefill={route.prefill} />}
       {route.n === 'cart' && student && <Cart {...ctx} student={student} shop={route.store} items={route.items} />}
       {route.n === 'paid' && student && <Paid {...ctx} student={student} r={route} />}
       {route.n === 'voice' && <Voice orderId={route.orderId} auto={route.auto} token={token} back={back} reset={reset} setStudent={setStudent} say={say} />}
       {route.n === 'orders' && <Orders {...ctx} />}
-      {route.n === 'rewards' && student && <Rewards {...ctx} student={student} />}
-      {route.n === 'topup' && student && <TopUp {...ctx} student={student} />}
+      {route.n === 'rewards' && student && <RewardsScreen token={token} back={back} go={go} openId={route.open} milestone={route.milestone}
+        refreshStudent={() => rpc<Student>('student_me', { p_token: token }).then(setStudent).catch(() => {})} />}
+      {route.n === 'topup' && student && <Gateway student={student} token={token} back={back} setStudent={setStudent} />}
       {route.n === 'spend' && <Spend {...ctx} />}
-      {route.n === 'vendorLogin' && <VendorAuth back={back} onAuth={t => { store.set('looply_vendor', t); setVToken(t); reset({ n: 'vendor' }) }} />}
-      {route.n === 'vendor' && vToken && <Vendor token={vToken} logout={logout} say={say} />}
+      {route.n === 'vendorLogin' && <VendorAuth back={back} onAuth={t => { store.set('looply_vendor', t); setVToken(t); reset({ n: 'vendor', desktop: route.desktop }) }} />}
+      {route.n === 'vendor' && vToken && <Vendor token={vToken} logout={logout} say={say} startDesktop={route.desktop} />}
       {!student && ['home', 'menu', 'cart', 'paid', 'rewards', 'topup'].includes(route.n) && <div className="center">Loading…</div>}
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -80,21 +77,6 @@ type Ctx = {
   token: string | null; student: Student | null; setStudent: (s: Student) => void
   go: (r: Route) => void; replace: (r: Route) => void; reset: (r: Route) => void; back: () => void
   say: (m: string) => void; logout: () => void
-}
-
-function Header({ title, sub, back, children }: { title: string; sub?: string; back?: () => void; children?: React.ReactNode }) {
-  return (
-    <div className="hero">
-      <div className="row">
-        {back && <button className="back" onClick={back} aria-label="Back">‹</button>}
-        <div style={{ flex: 1 }}>
-          <h1>{title}</h1>
-          {sub && <div className="sub">{sub}</div>}
-        </div>
-      </div>
-      {children}
-    </div>
-  )
 }
 
 function Welcome({ go }: Ctx) {
@@ -108,7 +90,7 @@ function Welcome({ go }: Ctx) {
         <div className="label" style={{ marginTop: 6 }}>Continue as</div>
         <button className="card choice sel" onClick={() => go({ n: 'studentLogin' })}>
           <span className="badge">S</span>
-          <span><b>Student</b><span className="muted small">Pay with your wallet, record a voice note, win offers</span></span>
+          <span><b>Student</b><span className="muted small">Pay with your wallet, record a voice note, win rewards</span></span>
           <span className="chev">›</span>
         </button>
         <button className="card choice" onClick={() => go({ n: 'vendorLogin' })}>
@@ -116,15 +98,26 @@ function Welcome({ go }: Ctx) {
           <span><b>Store vendor</b><span className="muted small">Manage orders, stock and voice insights</span></span>
           <span className="chev">›</span>
         </button>
-        <div className="banner">Voice feedback is the king. 15 seconds after each order unlocks 5% off.</div>
-        <a className="linkbtn" href="#vendor" onClick={e => { e.preventDefault(); go({ n: 'vendorLogin' }) }}>Open vendor web dashboard ›</a>
+        <div className="banner">Voice feedback is the king. 15 seconds after each order earns a scratch card.</div>
+        <a className="linkbtn" href="#vendor" onClick={e => { e.preventDefault(); go({ n: 'vendorLogin', desktop: true }) }}>Open vendor web dashboard ›</a>
       </div>
     </div>
   )
 }
 
-function Home({ student, go, logout }: Ctx & { student: Student }) {
-  const left = Math.max(0, 5 - student.notes_count)
+const asStore = (f: Favourite): Store => ({ id: f.id, code: '', name: f.name, tags: f.tags, description: '', pure_veg: false, eta_min: f.eta_min, color: f.color, open: f.open })
+const TIER_COLOR: Record<string, string> = { Regular: '#8a8372', Silver: '#8e9aa6', Gold: '#d99a00' }
+
+function Home({ student, token, go, logout }: Ctx & { student: Student }) {
+  const [favs, setFavs] = useState<Favourite[] | null>(null)
+  const [hub, setHub] = useState<RewardsHub | null>(null)
+  useEffect(() => {
+    rpc<Favourite[]>('my_favourites', { p_token: token }).then(setFavs).catch(() => setFavs([]))
+    rpc<RewardsHub>('my_rewards', { p_token: token }).then(setHub).catch(() => {})
+  }, [token, student.wallet, student.notes_count])
+  const scratch = hub?.rewards.filter(r => r.status === 'scratch').length ?? 0
+  const coupons = hub?.rewards.filter(r => r.status === 'available').length ?? 0
+  const left = hub ? hub.milestone.target - hub.milestone.progress : 5 - student.notes_count
   return (
     <div className="screen">
       <div className="hero">
@@ -142,16 +135,44 @@ function Home({ student, go, logout }: Ctx & { student: Student }) {
           <div><h2>Pay at store</h2><p>Pick a campus store, build your order, pay in one tap</p></div>
           <span className="go">→</span>
         </button>
+
+        <button className="rewards-hero" onClick={() => go({ n: 'rewards' })}>
+          <div className="rh-top">
+            <span className="rh-title">Rewards</span>
+            {hub && <span className="tier-badge" style={{ background: TIER_COLOR[hub.tier.name] }}>{hub.tier.name}</span>}
+            {scratch > 0 && <span className="rh-pulse">{scratch} scratch card{scratch > 1 ? 's' : ''} ready</span>}
+          </div>
+          <div className="rh-stats">
+            <div><b>{coupons}</b><span>coupons</span></div>
+            <div><b>{rupee(hub?.cashback_total ?? 0)}</b><span>cashback earned</span></div>
+            <div><b>{rupee(hub?.saved_total ?? 0)}</b><span>saved</span></div>
+          </div>
+          <div className="rh-progress">
+            <div className="pips">{Array.from({ length: 5 }).map((_, i) => <span key={i} className={i < (hub?.milestone.progress ?? student.notes_count) ? 'on' : ''} />)}</div>
+            <span>{left <= 0 ? 'Coupon unlocked!' : `${left} voice note${left === 1 ? '' : 's'} to your next 5% off coupon`}</span>
+          </div>
+        </button>
+
+        {favs && favs.length > 0 && (<>
+          <div className="section-title">{favs.some(f => !f.popular) ? 'Your favourites' : 'Popular on campus'}</div>
+          <div className="fav-row">
+            {favs.map(f => (
+              <button key={f.id} className="fav"
+                onClick={() => go({ n: 'menu', store: asStore(f), prefill: f.popular ? undefined : f.last_items.map(i => ({ item_id: i.item_id, qty: i.qty })) })}>
+                <span className="avatar" style={{ background: f.color, width: 40, height: 40, fontSize: 17 }}>{f.name[0]}</span>
+                <b>{f.name}</b>
+                <span className="small muted">{f.usual ? (f.popular ? `Try: ${f.usual}` : `Usually: ${f.usual}`) : f.tags}</span>
+                <span className="fav-cta">{f.popular ? 'View menu ›' : f.last_items.length ? 'Order again ›' : 'Open ›'}</span>
+              </button>
+            ))}
+          </div>
+        </>)}
+
         <div className="grid3">
           <button className="card tile" onClick={() => go({ n: 'orders' })}><div className="dot" />Order history</button>
           <button className="card tile" onClick={() => go({ n: 'rewards' })}><div className="dot" />My rewards</button>
-          <button className="card tile" onClick={() => go({ n: 'topup' })}><div className="dot" />Top up</button>
+          <button className="card tile" onClick={() => go({ n: 'topup' })}><div className="dot" />Add money</button>
         </div>
-        <button className="promo" onClick={() => go({ n: 'rewards' })}>
-          <span className="mic" />
-          <span><b>Speak &amp; save 5%</b><br /><span className="muted small">Voice notes recorded {Math.min(student.notes_count, 5)} / 5 for the next offer</span>
-            {left === 0 && <span className="small" style={{ color: 'var(--green)', fontWeight: 700 }}> · Offer unlocked!</span>}</span>
-        </button>
         <button className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }} onClick={() => go({ n: 'spend' })}>
           <span className="bars"><i style={{ height: 8 }} /><i style={{ height: 14 }} /><i style={{ height: 10 }} /><i style={{ height: 20 }} /><i style={{ height: 16 }} /></span>
           <b style={{ flex: 1, textAlign: 'left' }}>Spend analysis</b><span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: 13 }}>View ›</span>
@@ -197,11 +218,20 @@ function Stores({ back, go }: Ctx) {
   )
 }
 
-function Menu({ shop, student, back, go }: Ctx & { shop: Store; student: Student }) {
+function Menu({ shop, student, back, go, prefill }: Ctx & { shop: Store; student: Student; prefill?: { item_id: string; qty: number }[] }) {
   const [items, setItems] = useState<MenuItem[] | null>(null)
   const [qty, setQty] = useState<Record<string, number>>({})
   useEffect(() => {
-    supabase.from('menu_items').select('*').eq('store_id', shop.id).eq('active', true).order('sort').then(({ data }) => setItems(data as MenuItem[]))
+    supabase.from('menu_items').select('*').eq('store_id', shop.id).eq('active', true).order('sort').then(({ data }) => {
+      const rows = data as MenuItem[]
+      setItems(rows)
+      if (prefill?.length) { // "Order again": start with last time's basket
+        const q: Record<string, number> = {}
+        for (const p of prefill) { const it = rows.find(r => r.id === p.item_id); if (it && it.stock > 0) q[it.id] = Math.min(p.qty, it.stock) }
+        setQty(q)
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shop.id])
   const total = (items ?? []).reduce((s, i) => s + i.price * (qty[i.id] ?? 0), 0)
   const count = Object.values(qty).reduce((a, b) => a + b, 0)
@@ -249,20 +279,32 @@ function Cart({ shop, items: init, student, back, replace, setStudent, token }: 
   const [lines, setLines] = useState(init.map(i => ({ ...i, qty: i.stock })))
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  const [rewards, setRewards] = useState<Reward[]>([])
+  const [tierPct, setTierPct] = useState(0)
+  const [pick, setPick] = useState<string | null | undefined>(undefined) // undefined = best available, null = none
+  useEffect(() => {
+    rpc<RewardsHub>('my_rewards', { p_token: token }).then(h => { setRewards(h.rewards.filter(r => r.status === 'available')); setTierPct(h.tier.cashback_pct) }).catch(() => {})
+  }, [token])
+
   const sub = lines.reduce((s, l) => s + l.price * l.qty, 0)
-  const eligible = student.notes_count >= 5 && sub > 150
-  const disc = eligible ? Math.round(sub * 0.05) : 0
+  const options = rewards.map(r => ({ r, e: rewardEffect(r, sub, shop.id) }))
+  const best = options.filter(o => o.e.ok).sort((a, b) => b.e.discount + b.e.cashback - (a.e.discount + a.e.cashback))[0]
+  const chosenId = pick === undefined ? best?.r.id ?? null : pick
+  const chosen = options.find(o => o.r.id === chosenId && o.e.ok)
+  const disc = chosen?.e.discount ?? 0
   const total = sub - disc
+  const rewardCb = chosen?.e.cashback ?? 0
+  const tierCb = Math.floor((total * tierPct) / 100)
   const change = (id: string, d: number) => setLines(ls => ls.map(l => (l.id === id ? { ...l, qty: Math.max(0, l.qty + d) } : l)).filter(l => l.qty > 0))
   useEffect(() => { if (lines.length === 0) back() }, [lines.length, back])
   const pay = async () => {
     setBusy(true); setErr('')
     try {
-      const r = await rpc<{ order_id: string; total: number; discount: number; student: Student }>('place_order', {
-        p_token: token, p_store: shop.id, p_items: lines.map(l => ({ item_id: l.id, qty: l.qty })),
+      const r = await rpc<{ order_id: string; total: number; discount: number; cashback: number; student: Student }>('place_order', {
+        p_token: token, p_store: shop.id, p_items: lines.map(l => ({ item_id: l.id, qty: l.qty })), p_reward: chosen ? chosen.r.id : null,
       })
       setStudent(r.student)
-      replace({ n: 'paid', orderId: r.order_id, total: r.total, discount: r.discount, storeName: shop.name })
+      replace({ n: 'paid', orderId: r.order_id, total: r.total, discount: r.discount, cashback: r.cashback, storeName: shop.name })
     } catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
   }
   return (
@@ -276,21 +318,38 @@ function Cart({ shop, items: init, student, back, replace, setStudent, token }: 
             <b style={{ width: 52, textAlign: 'right' }}>{rupee(l.price * l.qty)}</b>
           </div>
         ))}
+
+        <div className="card coupons">
+          <div className="between"><b>Coupons &amp; cashback</b><span className="small muted">{options.length ? `${options.filter(o => o.e.ok).length} of ${options.length} can be used` : 'None yet'}</span></div>
+          {options.length === 0 && <div className="small muted" style={{ marginTop: 8 }}>Record a voice note after this order to earn a scratch card.</div>}
+          {options.map(({ r, e }) => (
+            <button key={r.id} className={`opt ${chosen?.r.id === r.id ? 'on' : ''}`} disabled={!e.ok} onClick={() => setPick(chosen?.r.id === r.id ? null : r.id)}>
+              <span className="radio" />
+              <span className="t"><b>{r.title}</b><small>{e.ok ? r.description : e.why}</small></span>
+              <span className="v">{e.ok ? (e.discount ? `−${rupee(e.discount)}` : `+${rupee(e.cashback)}`) : ''}</span>
+            </button>
+          ))}
+          {options.length > 0 && !chosen && <div className="small muted" style={{ marginTop: 6 }}>No coupon applied</div>}
+        </div>
+
         <div className="card">
           {disc > 0 && <>
             <div className="sum"><span className="muted">Subtotal</span><b>{rupee(sub)}</b></div>
-            <div className="sum" style={{ color: 'var(--green)' }}><span>Voice reward 5% off</span><b>−{rupee(disc)}</b></div>
+            <div className="sum" style={{ color: 'var(--green)' }}><span>{chosen?.r.title} applied</span><b>−{rupee(disc)}</b></div>
           </>}
           <div className="total-row"><div><div className="muted small">Order total</div><div className="small muted">{lines.reduce((n, l) => n + l.qty, 0)} item(s)</div></div><b className="total-amt">{rupee(total)}</b></div>
           <div className="sum small"><span className="muted">Wallet balance now</span><b>{rupee(student.wallet)}</b></div>
           <div className="sum small"><span className="muted">Amount left after purchase</span><b style={{ color: student.wallet - total < 0 ? 'var(--red)' : 'var(--ink)' }}>{rupee(student.wallet - total)}</b></div>
+          {rewardCb + tierCb > 0 && <div className="cashback-note">
+            <b>+{rupee(rewardCb + tierCb)} cashback</b>
+            <span>{rewardCb > 0 ? `${rupee(rewardCb)} from your coupon` : ''}{rewardCb > 0 && tierCb > 0 ? ' + ' : ''}{tierCb > 0 ? `${rupee(tierCb)} tier bonus` : ''}, credited right after you pay</span>
+          </div>}
         </div>
-        {student.notes_count >= 5 && sub <= 150 && <div className="banner small">Voice reward ready: add {rupee(151 - sub)} more to get 5% off.</div>}
         <div className="card choice sel"><span className="badge dk" style={{ width: 34, height: 34, fontSize: 16 }}>L</span><b style={{ fontSize: 15 }}>Pay with Looply wallet</b><span style={{ marginLeft: 'auto', color: 'var(--green)', fontWeight: 700, fontSize: 12 }}>Selected</span></div>
         {err && <div className="err">{err}</div>}
       </div>
       <div className="footer"><button className="btn dk" disabled={busy || total > student.wallet} onClick={pay}>
-        {total > student.wallet ? 'Not enough balance — top up' : busy ? 'Paying…' : `Pay ${rupee(total)}`}</button></div>
+        {total > student.wallet ? 'Not enough balance — add money' : busy ? 'Paying…' : `Pay ${rupee(total)}`}</button></div>
     </div>
   )
 }
@@ -302,13 +361,14 @@ function Paid({ student, r, go, reset }: Ctx & { student: Student; r: Extract<Ro
         <div className="check">✓</div>
         <h1 style={{ margin: 0 }}>Paid {rupee(r.total)}</h1>
         <div className="muted small" style={{ color: '#bbb' }}>{r.storeName} · Wallet balance now <b style={{ color: '#fff' }}>{rupee(student.wallet)}</b></div>
-        {r.discount > 0 && <div className="small" style={{ color: 'var(--yellow)', marginTop: 6 }}>You saved {rupee(r.discount)} with your voice reward 🎉</div>}
+        {r.discount > 0 && <div className="small" style={{ color: 'var(--yellow)', marginTop: 6 }}>You saved {rupee(r.discount)} with your coupon 🎉</div>}
+        {r.cashback > 0 && <div className="small" style={{ color: '#8ff0c0', marginTop: 4 }}>+{rupee(r.cashback)} cashback added to your wallet</div>}
       </div>
       <div className="voice-card">
         <span className="chip">THE KEY STEP · VOICE IS KING</span>
-        <h2>Say it in 15 seconds.<br />Win prizes &amp; offers.</h2>
+        <h2>Say it in 15 seconds.<br />Win a scratch card.</h2>
         <div className="orb"><div><span className="core" /></div></div>
-        <p className="small" style={{ margin: '0 0 16px' }}>Your voice note beats any star rating. We turn it into insights for the store, and you earn 5% off orders above ₹150.</p>
+        <p className="small" style={{ margin: '0 0 16px' }}>Your voice note beats any star rating. Every note earns a scratch card with a coupon or cashback, and every 5th unlocks 5% off.</p>
         <button className="btn dk" onClick={() => go({ n: 'voice', orderId: r.orderId, auto: true })}>● Tap to record (15 sec)</button>
       </div>
       <button className="linkbtn" style={{ color: '#aaa', marginBottom: 24 }} onClick={() => reset({ n: 'home' })}>Skip for now</button>
@@ -334,49 +394,6 @@ function Orders({ back, token }: Ctx) {
             {o.has_note && <span className="note">Voice note sent</span>}
           </div>
         ))}
-      </div>
-    </div>
-  )
-}
-
-function Rewards({ student, back, go }: Ctx & { student: Student }) {
-  const n = Math.min(student.notes_count, 5)
-  return (
-    <div className="screen">
-      <Header title="My rewards" sub="Voice notes unlock offers" back={back} />
-      <div className="scroll stack">
-        <div className="card center" style={{ padding: 24 }}>
-          <div style={{ fontSize: 44, fontWeight: 800 }}>{n} / 5</div>
-          <div className="muted">voice notes toward 5% off</div>
-          <div style={{ display: 'flex', gap: 6, margin: '16px 0' }}>
-            {[0, 1, 2, 3, 4].map(i => <div key={i} style={{ flex: 1, height: 10, borderRadius: 6, background: i < n ? 'var(--yellow)' : 'var(--line)' }} />)}
-          </div>
-          <b>{n >= 5 ? 'Offer unlocked: 5% off your next order above ₹150' : `${5 - n} more note${5 - n > 1 ? 's' : ''} to unlock 5% off`}</b>
-        </div>
-        <button className="btn" onClick={() => go({ n: 'stores' })}>Order now</button>
-      </div>
-    </div>
-  )
-}
-
-function TopUp({ student, back, token, setStudent, say }: Ctx & { student: Student }) {
-  const [amt, setAmt] = useState(200)
-  const [err, setErr] = useState('')
-  const [busy, setBusy] = useState(false)
-  const add = async () => {
-    setBusy(true); setErr('')
-    try { setStudent(await rpc<Student>('top_up', { p_token: token, p_amount: amt })); say(`${rupee(amt)} added to wallet`); back() }
-    catch (e) { setErr(errMsg(e)) } finally { setBusy(false) }
-  }
-  return (
-    <div className="screen">
-      <Header title="Add money" sub={`Current balance ${rupee(student.wallet)}`} back={back} />
-      <div className="scroll stack">
-        <div className="grid3">{[100, 200, 500].map(a => <button key={a} className={`card tile ${amt === a ? 'choice sel' : ''}`} style={{ fontSize: 18 }} onClick={() => setAmt(a)}>{rupee(a)}</button>)}</div>
-        <input className="field" type="number" min={1} max={2000} value={amt} onChange={e => setAmt(Number(e.target.value))} />
-        <div className="banner small">Demo wallet: money is simulated, no real payment is taken.</div>
-        {err && <div className="err">{err}</div>}
-        <button className="btn" disabled={busy || !(amt >= 1 && amt <= 2000)} onClick={add}>{busy ? 'Adding…' : `Add ${rupee(amt || 0)}`}</button>
       </div>
     </div>
   )

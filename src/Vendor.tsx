@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Console from './Console'
+import type { Feedback } from './api'
+import { NeedsAttention, ReviewCard, CategoryBars } from './Feedback'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
 
@@ -51,10 +53,13 @@ const NEXT: Record<string, string> = { new: 'preparing', preparing: 'ready', rea
 const LABEL: Record<string, string> = { new: 'New → Prepare', preparing: 'Preparing → Ready', ready: 'Ready → Done' }
 const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg: true, stock: 20, active: true }
 
-export default function Vendor({ token, logout, say }: { token: string; logout: () => void; say: (m: string) => void }) {
+export default function Vendor({ token, logout, say, startDesktop }: { token: string; logout: () => void; say: (m: string) => void; startDesktop?: boolean }) {
   const [d, setD] = useState<Dash | null>(null)
   const [a, setA] = useState<Analytics | null>(null)
+  const [f, setF] = useState<Feedback | null>(null)
   const wide = useWide()
+  // always opens in the phone layout; the desktop console is one tap away
+  const [view, setView] = useState<'phone' | 'desktop'>(startDesktop ? 'desktop' : 'phone')
   const [tab, setTab] = useState<'orders' | 'menu' | 'insights' | 'store'>('orders')
   const [err, setErr] = useState('')
   const [editing, setEditing] = useState<Item | null>(null)
@@ -62,7 +67,8 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
   const load = useCallback(() => Promise.all([
     rpc<Dash>('vendor_dashboard', { p_token: token }),
     rpc<Analytics>('vendor_analytics', { p_token: token }),
-  ]).then(([x, y]) => { setD(x); setA(y); setErr('') }).catch(e => {
+    rpc<Feedback>('vendor_feedback', { p_token: token }),
+  ]).then(([x, y, z]) => { setD(x); setA(y); setF(z); setErr('') }).catch(e => {
     setErr(errMsg(e)); if (/expired/i.test(errMsg(e))) logout()
   }), [token, logout])
   useEffect(() => { load(); const t = setInterval(() => { if (!editing) load() }, 5000); return () => clearInterval(t) }, [load, editing])
@@ -70,8 +76,8 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
   const run = async (fn: string, args: Record<string, unknown>, ok?: string) => {
     try { await rpc(fn, { p_token: token, ...args }); if (ok) say(ok); await load(); return true } catch (e) { say(errMsg(e)); return false }
   }
-  if (!d || !a) return <div className="center">{err || 'Loading dashboard…'}</div>
-  if (wide) return <Console d={d} a={a} run={run} logout={logout} />
+  if (!d || !a || !f) return <div className="center">{err || 'Loading dashboard…'}</div>
+  if (wide && view === 'desktop') return <Console d={d} a={a} f={f} run={run} logout={logout} onPhone={() => setView('phone')} />
 
   const advance = (id: string, status: string) => run('vendor_set_status', { p_order: id, p_status: NEXT[status] })
   const restock = (i: Item) => run('vendor_upsert_item', { p_id: i.id, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock + 50, p_active: i.active }, `${i.name} restocked +50`)
@@ -85,6 +91,7 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
             <div className="sub">{d.store.open ? 'Accepting orders' : 'Closed to new orders'} · {d.store.code}</div></div>
           <span className="badge-v">VENDOR</span>
         </div>
+        {wide && <button className="desk-btn" onClick={() => setView('desktop')}>Open desktop dashboard <span>›</span></button>}
       </div>
 
       <div className="scroll stack">
@@ -100,8 +107,8 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
             const it = d.items.find(x => x.id === i.id)
             return <div key={i.id} className="alert"><span>{i.name}: {i.stock === 0 ? 'sold out' : `only ${i.stock} left`}.</span>{it && <button onClick={() => restock(it)}>Restock +50 ›</button>}</div>
           })}
-          <b>Live queue</b>
-          {d.queue.length === 0 && <div className="muted center" style={{ padding: 16 }}>No open orders. New orders appear here within 5 seconds.</div>}
+          <b>Active orders <span className="muted small">({d.queue.length})</span></b>
+          {d.queue.length === 0 && <div className="muted center" style={{ padding: 16 }}>No active orders. Done orders leave this list, and new ones appear within 5 seconds.</div>}
           {d.queue.map(o => (
             <div key={o.id} className="card"><div className="qrow">
               <div><b>#{o.seq}</b> {o.student_name}<div className="small muted" style={{ marginTop: 4 }}>{o.items}</div>
@@ -139,7 +146,7 @@ export default function Vendor({ token, logout, say }: { token: string; logout: 
           ))}
         </>)}
 
-        {tab === 'insights' && <Insights d={d} />}
+        {tab === 'insights' && <Insights d={d} f={f} />}
         {tab === 'store' && <StoreTab d={d} run={run} logout={logout} />}
       </div>
 
@@ -183,11 +190,12 @@ export function ItemSheet({ item, onClose, onSave }: { item: Item; onClose: () =
   )
 }
 
-function Insights({ d }: { d: Dash }) {
+function Insights({ d, f }: { d: Dash; f: Feedback }) {
   const s = d.sentiment
   const total = s.positive + s.neutral + s.negative
   const w = (n: number) => `${total ? (n / total) * 100 : 0}%`
   return (<>
+    <NeedsAttention notes={f.notes} limit={3} />
     <div className="card">
       <b>Voice sentiment</b>
       {total === 0 ? <div className="muted small" style={{ marginTop: 6 }}>No voice notes yet. Reviews students send will be analysed here.</div> : (<>
@@ -197,6 +205,7 @@ function Insights({ d }: { d: Dash }) {
         <div className="muted small" style={{ marginTop: 6 }}>Average score {s.avg > 0 ? '+' : ''}{s.avg} (−1 to +1) from {total} notes</div>
       </>)}
     </div>
+    <div className="card"><b>Types of feedback</b><div style={{ marginTop: 10 }}><CategoryBars categories={f.categories} /></div></div>
     {Object.keys(d.aspects).length > 0 && <div className="card"><b>What students talk about</b>
       {Object.entries(d.aspects).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => (
         <div key={k} className="aspect-row"><span>{k} <span className="muted small">({v.n})</span></span>
@@ -205,15 +214,8 @@ function Insights({ d }: { d: Dash }) {
       ))}
     </div>}
     <b>Latest reviews</b>
-    {d.notes.length === 0 && <div className="muted center">Nothing here yet.</div>}
-    {d.notes.map(n => (
-      <div key={n.id} className="card">
-        <div className="qrow"><span>{sentimentEmoji(n.sentiment)} <b style={{ textTransform: 'capitalize' }}>{n.sentiment}</b> <span className="muted small">{n.sentiment_score > 0 ? '+' : ''}{n.sentiment_score.toFixed(2)}</span></span>
-          <span className="small muted">{n.student}{n.seq ? ` · #${n.seq}` : ''}</span></div>
-        <p style={{ margin: '8px 0', fontSize: 14 }}>“{n.transcript}”</p>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>{n.topics.map(t => <span key={t} className="chip-s">{t}</span>)}</div>
-      </div>
-    ))}
+    {f.notes.length === 0 && <div className="muted center">Nothing here yet.</div>}
+    {f.notes.slice(0, 15).map(n => <ReviewCard key={n.id} n={n} compact />)}
   </>)
 }
 

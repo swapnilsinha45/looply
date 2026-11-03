@@ -1,0 +1,5 @@
+-- Applied to the project as migration "rewards_favourites_review_fields" (see Supabase migration history for the full text).
+-- Adds: voice_notes.category/severity/flags/summary/method; wallet_txns ledger; rewards table (coupons, cashback, scratch cards);
+-- orders.cashback; helper functions _grant/_issue_scratch/_tier; place_order(p_reward); save_voice_note (analysis fields,
+-- scratch card, 5-note milestone coupon); my_rewards; reveal_reward; my_favourites; vendor_feedback; welcome coupon on signup.
+-- Edge functions: transcribe (Groq Whisper), analyze (Groq gpt-oss, aspect-based sentiment in any language).
