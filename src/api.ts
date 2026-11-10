@@ -15,8 +15,7 @@ export type MenuItem = {
 }
 export type Student = {
   id: string; code: string; name: string; campus: string; wallet: number; notes_count: number
-  // returned by save_voice_note
-  scratch_id?: string; milestone?: boolean
+  feedback_on?: boolean
 }
 export type OrderRow = {
   id: string; seq: number; total: number; discount: number; status: string
@@ -43,7 +42,7 @@ export type Reward = {
 }
 export type Tier = { name: 'Regular' | 'Silver' | 'Gold'; cashback_pct: number; next_name: string | null; next_at: number | null; notes?: number }
 export type RewardsHub = {
-  student: Student; tier: Tier & { notes: number }; milestone: { progress: number; target: number }
+  student: Student; feedback_on: boolean; month: { orders: number; target: number; perk_earned: boolean; resets: string }
   cashback_total: number; saved_total: number; rewards: Reward[]
   history: { amount: number; kind: string; note: string; created_at: string }[]
 }
@@ -53,7 +52,7 @@ export type Favourite = {
 }
 export type Feedback = {
   notes: {
-    id: string; transcript: string; summary: string | null; translation: string | null; sentiment: 'positive' | 'neutral' | 'negative'; sentiment_score: number
+    id: string; transcript: string; summary: string | null; translation: string | null; useful?: boolean; sentiment: 'positive' | 'neutral' | 'negative'; sentiment_score: number
     category: string | null; severity: string | null; flags: string[]; topics: string[]; language: string | null; method: string | null
     created_at: string; seq: number | null; student: string; items: string | null
   }[]

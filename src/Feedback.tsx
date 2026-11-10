@@ -25,6 +25,12 @@ export const isBad = (n: Note) => n.sentiment === 'negative' || sevRank(n) >= 3
 export const badReviews = (notes: Note[]) =>
   notes.filter(isBad).sort((a, b) => sevRank(b) - sevRank(a) || +new Date(b.created_at) - +new Date(a.created_at))
 
+// Vendors only get the day, never the time: exact times would let a store work out who said what.
+const dayLabel = (iso: string) => {
+  const d = String(iso).slice(0, 10)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+  return d === today ? 'Today' : new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
 const ago = (iso: string) => {
   const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000)
   return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`
@@ -59,7 +65,7 @@ export function ReviewCard({ n, compact, act, ignored }: { n: Note; compact?: bo
         <span>{sentimentEmoji(n.sentiment)} <b style={{ textTransform: 'capitalize' }}>{n.sentiment}</b>
           {sev && <span className={`sev ${sev}`}>{SEV[sev].label}</span>}
           {n.category && <span className="cat">{CATEGORY[n.category]?.label ?? n.category}</span>}</span>
-        <span className="muted small">{n.student}{n.seq ? ` · #${n.seq}` : ''} · {ago(n.created_at)}</span>
+        <span className="muted small">{n.student} · {dayLabel(n.created_at)}</span>
       </div>
       {n.summary && <p className="fb-summary">{n.summary}</p>}
       <p className={`fb-quote ${compact ? 'small' : ''}`}>“{n.transcript}”</p>
@@ -67,6 +73,7 @@ export function ReviewCard({ n, compact, act, ignored }: { n: Note; compact?: bo
       {err && <div className="fb-err">{err}</div>}
       <div className="fb-tags">
         {n.flags.map(f => <span key={f} className={`flag ${FLAG[f]?.good ? 'good' : 'bad'}`}>{FLAG[f]?.label ?? f}</span>)}
+        {n.useful && <span className="flag act">Actionable</span>}
         {n.language && <span className="flag lang">{n.language[0].toUpperCase() + n.language.slice(1)}</span>}
         {n.items && <span className="muted small">Ordered: {n.items}</span>}
         {act && (

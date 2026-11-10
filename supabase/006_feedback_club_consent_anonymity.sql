@@ -1,0 +1,7 @@
+-- Applied as migrations "feedback_club_consent_anonymity" and "refresh_vn_visible_view" (see Supabase migration history for the full text).
+-- Consent: students.feedback_on / feedback_consent_at; set_feedback(token, on); save_voice_note and the transcribe/analyze edge functions refuse without it.
+-- One reward rule: place_order issues a scratch card (source 'monthly') on the 3rd order of a calendar month (IST) when feedback is on.
+--   Removed: per-note scratch cards, the 5-note milestone coupon, note-count tiers. Prize and welcome-gift minimums lowered to ₹40-₹50.
+-- Anonymity: vendor_feedback / vendor_analytics / vendor_dashboard return 'Student', no order numbers, day-level dates, no order-to-feedback link.
+-- Usefulness: voice_notes.useful (names a theme or issue and is at least 20 characters); vendor_analytics.useful_notes.
+-- Audio: no longer stored (voice_notes.path cleared, storage upload policy dropped).

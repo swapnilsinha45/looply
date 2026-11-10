@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { rpc } from './api'
-import type { Reward, RewardsHub } from './api'
+import type { Reward, RewardsHub, Student } from './api'
 import { Confetti, Header, daysLeft, errMsg, rupee } from './ui'
+import { ConsentSheet } from './Consent'
 
 // ---------- shared reward maths (mirrors place_order on the server) ----------
 export const kindBadge = (r: Reward) => {
@@ -23,7 +24,8 @@ export function rewardEffect(r: Reward, subtotal: number, storeId: string): { ok
   return { ok: true, discount: 0, cashback: Math.min(Math.round((subtotal * r.value) / 100), cap) }
 }
 
-const TIER_COLOR: Record<string, string> = { Regular: '#8a8372', Silver: '#8e9aa6', Gold: '#d99a00' }
+// The one rule, in the one set of words used everywhere.
+export const RULE = 'Keep feedback on and order 3 times in a month to earn that month’s perk.'
 
 function Ticket({ r, onUse, dim }: { r: Reward; onUse?: () => void; dim?: boolean }) {
   const d = daysLeft(r.expires_at)
@@ -68,7 +70,7 @@ function Scratch({ r, token, auto, onDone }: { r: Reward; token: string | null; 
         <div className="prize"><Confetti /><span className="small">You won</span><b>{prize.title}</b><p>{prize.description}</p></div>
       ) : (
         <button className="cover" onClick={open} aria-label="Scratch to reveal">
-          <span className="sparkle">✦</span><b>{phase === 'wipe' ? 'Revealing…' : 'Scratch to reveal'}</b><span className="small">from your voice note</span>
+          <span className="sparkle">✦</span><b>{phase === 'wipe' ? 'Revealing…' : 'Scratch to reveal'}</b><span className="small">your monthly perk</span>
         </button>
       )}
       {err && <div className="err">{err}</div>}
@@ -77,55 +79,61 @@ function Scratch({ r, token, auto, onDone }: { r: Reward; token: string | null; 
 }
 
 type Props = {
-  token: string | null; back: () => void; go: (r: { n: 'stores' } | { n: 'topup' }) => void
-  openId?: string; milestone?: boolean; refreshStudent: () => void
+  token: string | null; student: Student; setStudent: (s: Student) => void
+  back: () => void; go: (r: { n: 'stores' } | { n: 'topup' }) => void
+  openId?: string; refreshStudent: () => void
 }
 
-export default function RewardsScreen({ token, back, go, openId, milestone, refreshStudent }: Props) {
+export default function RewardsScreen({ token, student, setStudent, back, go, openId, refreshStudent }: Props) {
   const [hub, setHub] = useState<RewardsHub | null>(null)
   const [err, setErr] = useState('')
   const [showOld, setShowOld] = useState(false)
+  const [consent, setConsent] = useState(false)
 
   const load = useCallback(() => rpc<RewardsHub>('my_rewards', { p_token: token }).then(setHub).catch(e => setErr(errMsg(e))), [token])
   useEffect(() => { load() }, [load])
 
-  if (!hub) return <div className="screen"><Header title="Rewards" sub="Speak, earn, save" back={back} /><div className="center muted">{err || 'Loading your rewards…'}</div></div>
+  const toggle = async () => {
+    if (!student.feedback_on) { setConsent(true); return }
+    if (!confirm('Turn feedback off? You will stop earning the monthly perk. Feedback you already shared stays as it is.')) return
+    try { setStudent(await rpc<Student>('set_feedback', { p_token: token, p_on: false })); load() } catch (e) { setErr(errMsg(e)) }
+  }
 
+  if (!hub) return <div className="screen"><Header title="Rewards" sub="Feedback Club" back={back} /><div className="center muted">{err || 'Loading your rewards…'}</div></div>
+
+  const on = student.feedback_on === true
   const scratch = hub.rewards.filter(r => r.status === 'scratch')
   const live = hub.rewards.filter(r => r.status === 'available')
   const old = hub.rewards.filter(r => r.status === 'used' || r.status === 'expired')
-  const t = hub.tier
-  const tierPct = t.next_at ? Math.min(100, Math.round((t.notes / t.next_at) * 100)) : 100
-  const potential = live.reduce((s, r) => s + (r.kind === 'flat' || r.kind === 'cashback_flat' ? r.value ?? 0 : 0), 0)
+  const { orders, target, perk_earned: earned, resets } = hub.month
+  const resetsOn = new Date(resets).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  const status = !on
+    ? (orders >= target && !earned ? 'Turn feedback on and your next order earns this month’s perk.' : 'Turn feedback on to start earning this month’s perk.')
+    : earned ? 'You earned this month’s perk. It is in your scratch cards below.'
+    : orders >= target ? 'Your next order earns this month’s perk.'
+    : `${target - orders} more order${target - orders === 1 ? '' : 's'} this month. Resets ${resetsOn}.`
 
   return (
     <div className="screen">
-      <Header title="Rewards" sub="Speak, earn, save" back={back} />
+      <Header title="Rewards" sub="Feedback Club" back={back} />
       <div className="scroll stack">
-        {milestone && <div className="banner celebrate"><Confetti /> <b>Milestone reached!</b> A 5% off coupon was added to your rewards.</div>}
-
-        <div className="tier-card" style={{ ['--tier' as string]: TIER_COLOR[t.name] }}>
-          <div className="tier-top">
-            <span className="tier-badge">{t.name}</span>
-            <span className="small">{t.cashback_pct ? `${t.cashback_pct}% cashback on every order` : 'Reach Silver for cashback on every order'}</span>
+        <div className={`club ${on ? 'on' : ''}`}>
+          <div className="club-top">
+            <div><b>Feedback is {on ? 'on' : 'off'}</b><span>Anonymous: stores see “Student”, never your name</span></div>
+            <button className={`switch ${on ? 'on' : ''}`} role="switch" aria-checked={on} aria-label="Feedback" onClick={toggle}><i /></button>
           </div>
-          <div className="tier-grid">
-            <div><b>{rupee(hub.saved_total)}</b><span>saved so far</span></div>
-            <div><b>{rupee(hub.cashback_total)}</b><span>cashback earned</span></div>
-            <div><b>{live.length + scratch.length}</b><span>rewards waiting</span></div>
+          <p className="rule">{RULE}</p>
+          <div className="pips">
+            {Array.from({ length: target }).map((_, i) => <span key={i} className={i < Math.min(orders, target) ? 'on' : ''}>{i < Math.min(orders, target) ? '●' : i + 1}</span>)}
+            <span className="pip-label">{Math.min(orders, target)} of {target} orders this month</span>
           </div>
-          <div className="small" style={{ marginTop: 14 }}>
-            {t.next_name ? `${t.notes} of ${t.next_at} voice notes to ${t.next_name}` : 'Top tier reached. Thank you for speaking up!'}
-          </div>
-          <div className="bar"><i style={{ width: `${tierPct}%` }} /></div>
+          <div className="small status">{status}</div>
         </div>
 
-        <div className="card milestone">
-          <div className="between"><b>Next coupon</b><span className="small muted">5% off, every 5 voice notes</span></div>
-          <div className="pips">
-            {Array.from({ length: hub.milestone.target }).map((_, i) => <span key={i} className={i < hub.milestone.progress ? 'on' : ''}>{i < hub.milestone.progress ? '●' : i + 1}</span>)}
-          </div>
-          <div className="small muted">{hub.milestone.target - hub.milestone.progress} more voice note{hub.milestone.target - hub.milestone.progress === 1 ? '' : 's'} to unlock it</div>
+        <div className="tier-grid light">
+          <div><b>{rupee(hub.saved_total)}</b><span>saved so far</span></div>
+          <div><b>{rupee(hub.cashback_total)}</b><span>cashback earned</span></div>
+          <div><b>{live.length + scratch.length}</b><span>rewards waiting</span></div>
         </div>
 
         {scratch.length > 0 && (<>
@@ -136,16 +144,15 @@ export default function RewardsScreen({ token, back, go, openId, milestone, refr
         </>)}
 
         <div className="section-title">Your coupons <span className="count">{live.length}</span></div>
-        {live.length === 0 && <div className="card center muted small" style={{ padding: 24 }}>No coupons yet. Record a voice note after your next order to earn a scratch card.</div>}
+        {live.length === 0 && <div className="card center muted small" style={{ padding: 24 }}>No coupons yet. {RULE}</div>}
         {live.map(r => <Ticket key={r.id} r={r} onUse={() => go({ n: 'stores' })} />)}
-        {potential > 0 && <div className="small muted" style={{ textAlign: 'center' }}>Worth up to {rupee(potential)} in flat savings</div>}
 
-        <div className="section-title">How to earn</div>
+        <div className="section-title">How it works</div>
         <div className="card earn">
-          <div><i>1</i><div><b>Order and pay</b><p>Every order at a campus store builds your history and your favourites.</p></div></div>
-          <div><i>2</i><div><b>Speak for 15 seconds</b><p>Each voice note gives you a scratch card with a coupon or cashback.</p></div></div>
-          <div><i>3</i><div><b>Every 5th note</b><p>Unlocks a 5% off coupon for orders above ₹150.</p></div></div>
-          <div><i>4</i><div><b>Climb the tiers</b><p>Silver at 5 notes gives 2% cashback on every order. Gold at 15 notes gives 3%.</p></div></div>
+          <div><i>1</i><div><b>Order at a campus store</b><p>Your orders move you forward. Writing feedback is optional.</p></div></div>
+          <div><i>2</i><div><b>Keep feedback on</b><p>You agree once to share anonymous feedback. Stores see your words as “Student”, never your name or audio.</p></div></div>
+          <div><i>3</i><div><b>Order 3 times in a month</b><p>You earn that month’s perk: a scratch card with a coupon or cashback.</p></div></div>
+          <div><i>4</i><div><b>Nobody is paid per note</b><p>Feedback is never bought by the unit, so honest feedback stays honest.</p></div></div>
         </div>
 
         <div className="section-title">Wallet activity</div>
@@ -162,9 +169,10 @@ export default function RewardsScreen({ token, back, go, openId, milestone, refr
           {showOld && old.map(r => <Ticket key={r.id} r={r} dim />)}
         </>)}
 
-        <button className="btn" onClick={() => go({ n: 'stores' })}>Order now and use a reward</button>
+        <button className="btn" onClick={() => go({ n: 'stores' })}>Order now</button>
         <button className="btn ghost" onClick={() => go({ n: 'topup' })}>Add money</button>
       </div>
+      {consent && <ConsentSheet token={token} onCancel={() => setConsent(false)} onDone={s => { setStudent(s); setConsent(false); load() }} />}
     </div>
   )
 }

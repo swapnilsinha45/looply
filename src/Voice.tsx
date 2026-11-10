@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { rpc, supabase } from './api'
+import { rpc } from './api'
+import { ConsentSheet } from './Consent'
 import type { Student } from './api'
 import { analyse, sentimentEmoji } from './sentiment'
 import { deepAnalyse } from './analysis'
@@ -14,12 +15,13 @@ const pickMime = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'au
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 type Props = {
-  orderId: string; token: string | null; auto?: boolean
-  back: () => void; reset: (r: { n: 'home' } | { n: 'rewards'; open?: string; milestone?: boolean }) => void
+  orderId: string; token: string | null; auto?: boolean; feedbackOn: boolean
+  back: () => void; reset: (r: { n: 'home' }) => void
   setStudent: (s: Student) => void; say: (m: string) => void
 }
 
-export default function Voice({ orderId, token, auto, back, reset, setStudent, say }: Props) {
+export default function Voice({ orderId, token, auto, feedbackOn, back, reset, setStudent, say }: Props) {
+  const [consented, setConsented] = useState(feedbackOn)
   const [phase, setPhase] = useState<'idle' | 'rec' | 'transcribing' | 'review' | 'saving'>('idle')
   const [stage, setStage] = useState('')
   const [secs, setSecs] = useState(0)
@@ -76,6 +78,7 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
   }, [])
 
   const start = async () => {
+    if (!consented) return // nothing is recorded until the student has agreed
     setErr(''); setNote(''); setText(''); setLang(null); chunks.current = []; blob.current = null
     let stream: MediaStream
     try {
@@ -111,7 +114,7 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
   // arriving from "Tap to record": start listening straight away so recording takes a single tap
   const autoStarted = useRef(false)
   useEffect(() => {
-    if (auto && !autoStarted.current) { autoStarted.current = true; start() }
+    if (auto && consented && !autoStarted.current) { autoStarted.current = true; start() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -121,13 +124,7 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
   const submit = async () => {
     setPhase('saving'); setErr('')
     try {
-      let path: string | null = null
-      if (blob.current && blob.current.size > 0) {
-        const ext = blob.current.type.includes('mp4') ? 'mp4' : blob.current.type.includes('ogg') ? 'ogg' : 'webm'
-        const p = `${orderId}/${Date.now()}.${ext}`
-        const up = await supabase.storage.from('voice-notes').upload(p, blob.current, { contentType: blob.current.type.split(';')[0] })
-        if (!up.error) path = p // audio is best-effort; the text review is what counts
-      }
+      const path: string | null = null // audio is never stored: only the text is kept
       setStage('Reading your review…')
       const an = await deepAnalyse(text.trim(), token) // AI read (any language); falls back to the word list if offline
       setStage('Saving…')
@@ -138,8 +135,8 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
         p_category: an.category, p_severity: an.severity, p_flags: an.flags, p_summary: an.summary, p_method: an.method,
       })
       setStudent(s)
-      say(s.milestone ? '5% off coupon unlocked, plus a scratch card!' : 'Review sent. You earned a scratch card!')
-      reset({ n: 'rewards', open: s.scratch_id, milestone: s.milestone })
+      say('Thanks. The store sees your words as “Student”, never your name.')
+      reset({ n: 'home' })
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not save review'); setPhase('review') }
   }
 
@@ -210,8 +207,10 @@ export default function Voice({ orderId, token, auto, back, reset, setStudent, s
       )}
 
       <div style={{ flex: 1 }} />
-      <div className="reward" style={{ marginTop: 16 }}>Every note earns a scratch card. Every 5th note unlocks 5% off.</div>
+      <div className="reward" style={{ marginTop: 16 }}>Optional. The store sees your words as “Student”, never your name or audio.</div>
       {(phase === 'idle' || phase === 'review') && <button className="linkbtn" style={{ color: '#aaa', marginBottom: 20 }} onClick={() => reset({ n: 'home' })}>Skip</button>}
+      {!consented && <ConsentSheet token={token} onCancel={() => reset({ n: 'home' })}
+        onDone={s => { setStudent(s); setConsented(true); if (auto) setTimeout(() => { autoStarted.current = true; start() }, 60) }} />}
     </div>
   )
 }

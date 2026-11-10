@@ -19,7 +19,7 @@ const NAV: { id: Section; label: string; group?: string }[] = [
 const SUB: Record<Section, string> = {
   overview: 'live from campus orders and voice notes', orders: 'active orders first, done ones move to the Done tab', products: 'your menu and SKUs',
   inventory: 'stock levels and restocking', insights: 'what students actually said, in their own words',
-  sentiment: 'how students feel, scored from every voice note', rewards: 'voice notes that earn students 5% off', settings: 'store profile and account',
+  sentiment: 'how students feel, scored from every voice note', rewards: 'perks for students who keep feedback on and order', settings: 'store profile and account',
 }
 const NEXT: Record<string, string> = { new: 'preparing', preparing: 'ready', ready: 'done' }
 const ACTION: Record<string, string> = { new: 'Start preparing', preparing: 'Mark ready', ready: 'Mark done' }
@@ -77,7 +77,7 @@ export default function Console({ d, a, f, act, run, logout, onPhone, initial }:
             <div className="c-card"><span className="muted">Orders today</span><b>{a.orders_today}</b><Delta now={a.orders_today} before={a.orders_yesterday} /></div>
             <div className="c-card"><span className="muted">Revenue</span><b>{rupee(a.revenue_today)}</b><Delta now={a.revenue_today} before={a.revenue_yesterday} /></div>
             <div className="c-card"><span className="muted">Avg order value</span><b>{rupee(a.avg_order_value)}</b><span className="c-delta muted">today</span></div>
-            <div className="c-card"><span className="muted">Voice notes</span><b>{a.notes_total}</b><span className="c-delta up">{a.orders_total ? Math.round((a.notes_total / a.orders_total) * 100) : 0}% of orders</span></div>
+            <div className="c-card"><span className="muted">Actionable feedback</span><b>{a.useful_notes}</b><span className="c-delta up">{a.notes_total ? Math.round((a.useful_notes / a.notes_total) * 100) : 0}% of {a.notes_total} notes are specific</span></div>
           </div>
           <div className="c-grid2">
             <div className="c-card">
@@ -119,7 +119,7 @@ export default function Console({ d, a, f, act, run, logout, onPhone, initial }:
             <table className="c-table">
               <thead><tr><th>SKU</th><th>Product</th><th>Price</th><th>Stock</th><th>Type</th><th>Visible</th><th /></tr></thead>
               <tbody>
-                {d.items.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 24, textAlign: 'center' }}>No products yet. Add your first SKU.</td></tr>}
+                {d.items.length === 0 && <tr><td colSpan={6} className="muted" style={{ padding: 24, textAlign: 'center' }}>No products yet. Add your first SKU.</td></tr>}
                 {d.items.map(i => (
                   <tr key={i.id} style={{ opacity: i.active ? 1 : 0.55 }}>
                     <td className="muted">{i.sku}</td>
@@ -162,13 +162,13 @@ export default function Console({ d, a, f, act, run, logout, onPhone, initial }:
 
         {sec === 'rewards' && (<>
           <div className="c-stats">
-            <div className="c-card"><span className="muted">Voice notes recorded</span><b>{a.notes_total}</b><span className="c-delta muted">all time</span></div>
+            <div className="c-card"><span className="muted">Feedback received</span><b>{a.notes_total}</b><span className="c-delta muted">all time</span></div>
             <div className="c-card"><span className="muted">Students speaking up</span><b>{a.rewards.students_with_notes}</b><span className="c-delta muted">unique students</span></div>
-            <div className="c-card"><span className="muted">Offers redeemed</span><b>{a.rewards.rewarded_orders}</b><span className="c-delta muted">orders with 5% off</span></div>
+            <div className="c-card"><span className="muted">Offers redeemed</span><b>{a.rewards.rewarded_orders}</b><span className="c-delta muted">orders using a perk</span></div>
             <div className="c-card"><span className="muted">Discount given</span><b>{rupee(a.rewards.discount_total)}</b><span className="c-delta muted">cost of rewards</span></div>
           </div>
           <div className="c-card"><b className="c-title">How rewards work</b>
-            <p className="muted" style={{ margin: '8px 0 0', lineHeight: 1.6 }}>Every student who records a voice note after an order moves toward a reward. After their 5th note, their next order above ₹150 gets 5% off, and the counter resets. {a.rewards.students_unlocked} student{a.rewards.students_unlocked === 1 ? '' : 's'} who reviewed your store currently {a.rewards.students_unlocked === 1 ? 'has' : 'have'} an offer ready.</p></div>
+            <p className="muted" style={{ margin: '8px 0 0', lineHeight: 1.6 }}>Students earn a monthly perk by keeping feedback on and ordering 3 times in a month. Nobody is paid per note, so the feedback you read is not bought by the unit. Actionable feedback counts notes that name something specific you can act on.</p></div>
         </>)}
 
         {sec === 'settings' && <div style={{ maxWidth: 560 }}><StoreTab d={d} run={run} logout={logout} /></div>}
@@ -216,22 +216,22 @@ function StockInput({ value, onSave }: { value: number; onSave: (n: number) => v
 }
 
 function OrdersTable({ a, advance }: { a: Analytics; advance: (id: string, status: string) => void }) {
-  const [f, setF] = useState<'active' | 'new' | 'preparing' | 'ready' | 'done' | 'voice' | 'all'>('active')
+  const [f, setF] = useState<'active' | 'new' | 'preparing' | 'ready' | 'done' | 'all'>('active')
   const n = (s: string) => a.orders.filter(o => o.status === s).length
-  const rows = a.orders.filter(o => (f === 'all' ? true : f === 'active' ? o.status !== 'done' : f === 'voice' ? o.has_note : o.status === f))
+  const rows = a.orders.filter(o => (f === 'all' ? true : f === 'active' ? o.status !== 'done' : o.status === f))
   const active = a.orders.filter(o => o.status !== 'done').length
-  const chips: [typeof f, string][] = [['active', `Active ${active}`], ['new', `New ${n('new')}`], ['preparing', `Preparing ${n('preparing')}`], ['ready', `Ready ${n('ready')}`], ['done', `Done ${n('done')}`], ['voice', `With voice note ${a.orders.filter(o => o.has_note).length}`], ['all', `All ${a.orders.length}`]]
+  const chips: [typeof f, string][] = [['active', `Active ${active}`], ['new', `New ${n('new')}`], ['preparing', `Preparing ${n('preparing')}`], ['ready', `Ready ${n('ready')}`], ['done', `Done ${n('done')}`], ['all', `All ${a.orders.length}`]]
   return (<>
     <div className="c-chips">{chips.map(([k, l]) => <button key={k} className={f === k ? 'on' : ''} onClick={() => setF(k)}>{l}</button>)}</div>
     <div className="c-card flush">
       <table className="c-table">
-        <thead><tr><th>Order</th><th>Student</th><th>Items</th><th>Amount</th><th>Time</th><th>Status</th><th /></tr></thead>
+        <thead><tr><th>Order</th><th>Items</th><th>Amount</th><th>Time</th><th>Status</th><th /></tr></thead>
         <tbody>
           {rows.length === 0 && <tr><td colSpan={7} className="muted" style={{ padding: 24, textAlign: 'center' }}>Nothing here. Orders marked done leave Active, and new ones appear within 5 seconds.</td></tr>}
           {rows.map(o => (
             <tr key={o.id}>
-              <td><b>#{o.seq}</b></td><td>{o.student}</td>
-              <td>{o.items}{o.has_note && <span className="c-note" title="Has a voice note"> {sentimentEmoji(o.note_sentiment ?? 'neutral')}</span>}</td>
+              <td><b>#{o.seq}</b></td>
+              <td>{o.items}</td>
               <td>{rupee(o.total)}</td><td className="muted">{time(o.created_at)}</td>
               <td><span className={`status ${o.status}`}>{o.status[0].toUpperCase() + o.status.slice(1)}</span></td>
               <td className="c-actions">{NEXT[o.status] && <button onClick={() => advance(o.id, o.status)}>{ACTION[o.status]}</button>}</td>

@@ -11,7 +11,7 @@ export function PendingReviews({ orders, onRecord }: { orders: OrderRow[]; onRec
   if (orders.length === 0) return null
   return (
     <>
-      <div className="section-title">Waiting for your review</div>
+      <div className="section-title">Share feedback on a recent order</div>
       <div className="pending">
         {orders.map(o => (
           <div key={o.id} className="pending-card">
@@ -19,7 +19,7 @@ export function PendingReviews({ orders, onRecord }: { orders: OrderRow[]; onRec
               <b>{o.store_name}</b>
               <span className="small muted pc-items">{o.items}</span>
               <span className="small muted">{rupee(o.total)} · {ago(o.created_at)}</span>
-              <span className="pc-reward">Earns a scratch card</span>
+              <span className="pc-reward">Optional · 15 seconds</span>
             </div>
             <button className="pc-btn" onClick={() => onRecord(o.id)}>Record now</button>
           </div>

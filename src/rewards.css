@@ -194,3 +194,34 @@
 .pc-btn { background: var(--ink); color: var(--yellow); font-weight: 800; font-size: 13px; padding: 11px 16px; border-radius: 14px; white-space: nowrap; }
 .review-btn { margin-top: 10px; width: 100%; background: var(--yellow); color: var(--ink); font-weight: 800; font-size: 14px; padding: 11px; border-radius: 12px; display: flex; justify-content: center; align-items: baseline; gap: 8px; }
 .review-btn small { font-weight: 700; font-size: 11px; opacity: .7; }
+
+/* ---------- feedback club, consent, perk ---------- */
+.club { border-radius: 22px; padding: 16px; background: #fff; border: 2px solid var(--line); }
+.club.on { border-color: var(--ink); background: linear-gradient(135deg, #fffbea, #fff); }
+.club-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.club-top b { display: block; font-size: 18px; }
+.club-top span { font-size: 12px; color: var(--muted); }
+.switch { position: relative; width: 52px; height: 30px; border-radius: 999px; background: #d8d2bf; flex: none; transition: .15s; }
+.switch i { position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: .15s; box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.switch.on { background: var(--green); }
+.switch.on i { transform: translateX(22px); }
+.club .rule { margin: 12px 0; font-weight: 700; font-size: 14px; line-height: 1.4; }
+.club .pips { margin-bottom: 8px; }
+.pip-label { margin-left: 6px; width: auto !important; height: auto !important; border: 0 !important; font-size: 12px !important; color: var(--muted) !important; }
+.club .status { color: var(--amber); font-weight: 700; }
+.tier-grid.light div { background: #fff; border: 1px solid var(--line); }
+.tier-grid.light b { color: var(--ink); }
+.tier-grid.light span { color: var(--muted); opacity: 1; }
+.club-state { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.15); color: #fff; }
+.club-state.on { background: var(--green); }
+.sheet.consent h2 { margin: 0 0 4px; }
+.sheet.consent ul { margin: 12px 0; padding-left: 18px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 1.4; }
+.sheet.consent .banner { margin-bottom: 12px; }
+.perk-card { margin: 0 16px 12px; border-radius: 18px; padding: 14px; background: var(--yellow); color: var(--ink); display: flex; flex-direction: column; gap: 6px; text-align: center; }
+.perk-card b { font-size: 18px; }
+.perk-card span { font-size: 13px; }
+.perk-card.quiet { background: #2b2619; color: #fff; }
+.flag.act { background: #fff2c2; color: #8a5a00; }
+.tabs button { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tabs button svg { display: block; }
+.item .thumb { font-size: 28px; }

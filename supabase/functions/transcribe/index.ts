@@ -28,9 +28,13 @@ Deno.serve(async req => {
     const { data: auth } = await db.from('student_auth').select('student_id').eq('token', token).maybeSingle()
     if (!auth) return json({ error: 'Session expired' }, 401)
 
+    // no consent, no audio or text leaves the app
+    const { data: stu } = await db.from('students').select('feedback_on').eq('id', auth.student_id).maybeSingle()
+    if (!stu?.feedback_on) return json({ error: 'Turn feedback on first' }, 403)
+
     const since = new Date(Date.now() - 3600_000).toISOString()
     const { count } = await db.from('transcribe_log').select('id', { count: 'exact', head: true })
-      .eq('student_id', auth.student_id).gte('created_at', since)
+      .eq('student_id', auth.student_id).eq('kind', 'transcribe').gte('created_at', since)
     if ((count ?? 0) >= PER_HOUR) return json({ error: 'Too many recordings this hour. Type your review instead.' }, 429)
 
     const { data: secret } = await db.from('app_secrets').select('value').eq('name', 'groq_api_key').maybeSingle()

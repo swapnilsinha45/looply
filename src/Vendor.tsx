@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Console from './Console'
 import type { Feedback } from './api'
 import { NeedsAttention, ReviewCard, CategoryBars, IgnoredList } from './Feedback'
+import { TabIcon } from './ui'
 import type { FeedbackActs } from './Feedback'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
@@ -23,7 +24,7 @@ export type Dash = {
 
 export type Analytics = {
   orders_today: number; revenue_today: number; orders_yesterday: number; revenue_yesterday: number; avg_order_value: number
-  orders_total: number; notes_total: number
+  orders_total: number; notes_total: number; useful_notes: number
   hourly: { h: number; n: number }[]
   top_products: { name: string; units: number }[]
   daily_sentiment: { day: string; score: number | null; n: number }[]
@@ -118,7 +119,7 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
           <div className="stats">
             <div className="card stat"><span className="muted small">Orders today</span><b>{a.orders_today}</b></div>
             <div className="card stat"><span className="muted small">Revenue today</span><b>{rupee(a.revenue_today)}</b></div>
-            <div className="card stat"><span className="muted small">Voice notes</span><b>{d.voice_notes}</b><span className="up">{pct}% of orders</span></div>
+            <div className="card stat"><span className="muted small">Actionable feedback</span><b>{a.useful_notes}</b><span className="up">{a.notes_total ? Math.round((a.useful_notes / a.notes_total) * 100) : 0}% of {a.notes_total} notes</span></div>
             <div className="card stat"><span className="muted small">Mood</span><b>{d.sentiment.positive + d.sentiment.neutral + d.sentiment.negative ? sentimentEmoji(d.sentiment.avg > 0.15 ? 'positive' : d.sentiment.avg < -0.15 ? 'negative' : 'neutral') : '—'}</b>
               <span className="small muted">avg {d.sentiment.avg > 0 ? '+' : ''}{d.sentiment.avg}</span></div>
           </div>
@@ -130,8 +131,7 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
           {d.queue.length === 0 && <div className="muted center" style={{ padding: 16 }}>No active orders. Done orders leave this list, and new ones appear within 5 seconds.</div>}
           {d.queue.map(o => (
             <div key={o.id} className="card"><div className="qrow">
-              <div><b>#{o.seq}</b> {o.student_name}<div className="small muted" style={{ marginTop: 4 }}>{o.items}</div>
-                {o.note_sec != null && <span className="note">Voice note {sentimentEmoji(o.note_sentiment ?? 'neutral')} {o.note_sec}s</span>}</div>
+              <div><b>#{o.seq}</b><div className="small muted" style={{ marginTop: 4 }}>{o.items}</div></div>
               <div className="r"><b>{rupee(o.total)}</b>
                 <button className={`status ${o.status}`} onClick={() => advance(o.id, o.status)}>{LABEL[o.status]}</button></div>
             </div></div>
@@ -175,7 +175,7 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
       }} />}
 
       <div className="tabs">
-        {(['orders', 'menu', 'insights', 'store'] as const).map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{t === 'menu' ? 'Products' : t[0].toUpperCase() + t.slice(1)}</button>)}
+        {(['orders', 'menu', 'insights', 'store'] as const).map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}><TabIcon name={t} /><span>{t === 'menu' ? 'Products' : t[0].toUpperCase() + t.slice(1)}</span></button>)}
       </div>
     </div>
   )
