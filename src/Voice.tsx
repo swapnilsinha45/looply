@@ -2,8 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { rpc } from './api'
 import { ConsentSheet } from './Consent'
 import type { Student } from './api'
-import { analyse, sentimentEmoji } from './sentiment'
-import { deepAnalyse } from './analysis'
+import { sentimentEmoji } from './sentiment'
+import { deepAnalyse, lexiconAnalysis } from './analysis'
+import type { Analysis } from './analysis'
+
+// Plain words for the score, so it reads as a result rather than a setting.
+const moodWords = (s: number) => (s <= -0.6 ? 'Very negative' : s < -0.15 ? 'Negative' : s <= 0.15 ? 'Neutral or mixed' : s < 0.6 ? 'Positive' : 'Very positive')
 
 const TOPICS = ['Taste', 'Wait time', 'Price', 'Hygiene', 'Staff', 'Stock']
 const MAX_SECS = 15
@@ -38,8 +42,14 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
   const blob = useRef<Blob | null>(null)
   const alive = useRef(true)
 
-  const result = useMemo(() => analyse(text), [text])
-  const topics = useMemo(() => Array.from(new Set([...picked, ...result.topics])), [picked, result.topics])
+  // What the student sees is the same AI reading the store gets; the word-list reading fills in until it arrives.
+  const [ai, setAi] = useState<{ text: string; a: Analysis } | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const quick = useMemo(() => lexiconAnalysis(text), [text])
+  const current = !!ai && ai.text === text.trim()
+  const shown: Analysis = current ? ai!.a : quick
+  const fromAi = current && ai!.a.method === 'llm'
+  const topics = useMemo(() => Array.from(new Set([...picked, ...shown.topics])), [picked, shown.topics])
   const words = text.trim().split(/\s+/).filter(Boolean).length
 
   useEffect(() => () => {
@@ -126,7 +136,8 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
     try {
       const path: string | null = null // audio is never stored: only the text is kept
       setStage('Reading your review…')
-      const an = await deepAnalyse(text.trim(), token) // AI read (any language); falls back to the word list if offline
+      // reuse the reading already shown if the text hasn't changed; otherwise read it now (falls back to the word list if offline)
+      const an = current ? ai!.a : await deepAnalyse(text.trim(), token)
       setStage('Saving…')
       const s = await rpc<Student>('save_voice_note', {
         p_token: token, p_order: orderId, p_duration: duration.current || Math.min(MAX_SECS, Math.max(1, Math.round(words / 2.5))),
@@ -135,13 +146,26 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
         p_category: an.category, p_severity: an.severity, p_flags: an.flags, p_summary: an.summary, p_method: an.method,
       })
       setStudent(s)
-      say('Thanks. The store sees your words as “Student”, never your name.')
+      say(s.gift ? `Thanks! You unlocked ${s.gift}. It’s in Rewards.` : 'Thanks. The store sees your words as “Student”, never your name.')
       reset({ n: 'home' })
     } catch (e) { setErr(e instanceof Error ? e.message : 'Could not save review'); setPhase('review') }
   }
 
-  const pct = Math.round(((result.score + 1) / 2) * 100)
+  // read the review with the AI once the student pauses typing (1.2 s), so the preview matches what the store will see
+  useEffect(() => {
+    const t = text.trim()
+    if (phase !== 'review' || !consented || t.split(/\s+/).filter(Boolean).length < 3 || ai?.text === t) return
+    const h = setTimeout(async () => {
+      setAiBusy(true)
+      const a = await deepAnalyse(t, token)
+      setAi({ text: t, a }); setAiBusy(false)
+    }, 1200)
+    return () => clearTimeout(h)
+  }, [text, phase, consented, token, ai?.text])
+
   const busy = phase === 'rec' || phase === 'transcribing' || phase === 'saving'
+  const neg = shown.score < 0 ? Math.round(Math.abs(shown.score) * 100) : 0
+  const pos = shown.score > 0 ? Math.round(shown.score * 100) : 0
 
   return (
     <div className={`screen dark ${phase === 'rec' ? 'rec' : ''}`} style={{ overflowY: 'auto' }}>
@@ -183,20 +207,34 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
           <textarea className="review" value={text} onChange={e => setText(e.target.value.slice(0, 600))} rows={5} placeholder="Say or type what you thought: taste, wait time, price, staff…" disabled={phase === 'saving'} />
           <div className="small" style={{ color: '#999', textAlign: 'right' }}>{words} words · {text.length}/600</div>
 
-          <div className="sent">
-            <div className="sent-head"><span>{sentimentEmoji(result.label)}</span><b style={{ textTransform: 'capitalize' }}>{words ? result.label : 'Waiting for text'}</b>
-              <span className="small" style={{ marginLeft: 'auto', color: '#bbb' }}>Sentiment {result.score > 0 ? '+' : ''}{result.score.toFixed(2)}</span></div>
-            <div className="meter"><i style={{ left: `${pct}%` }} /></div>
+          <div className="sent" aria-live="polite">
+            <div className="sent-title">
+              <span>How the store will read this</span>
+              <span className={`src ${fromAi ? 'ai' : ''}`}>{fromAi ? 'AI reading' : aiBusy ? 'Reading…' : 'Quick reading'}</span>
+            </div>
+            <div className="sent-head">
+              <span>{words ? sentimentEmoji(shown.sentiment) : '…'}</span>
+              <b>{words ? moodWords(shown.score) : 'Waiting for your words'}</b>
+              {words > 0 && <span className="small" style={{ marginLeft: 'auto', color: '#bbb' }}>{shown.score > 0 ? '+' : ''}{Math.round(shown.score * 100)} / 100</span>}
+            </div>
+            {/* a result, not a control: fills out from the centre towards the mood, with no handle to drag */}
+            <div className="mood-bar" role="img" aria-label={`Mood ${moodWords(shown.score)}, ${Math.round(shown.score * 100)} out of 100`}>
+              <span className="half neg"><i style={{ width: `${neg}%` }} /></span>
+              <span className="half pos"><i style={{ width: `${pos}%` }} /></span>
+            </div>
             <div className="meter-labels"><span>Negative</span><span>Neutral</span><span>Positive</span></div>
-            {Object.keys(result.aspects).length > 0 && (
+            {Object.keys(shown.aspects).length > 0 && (<>
+              <div className="small" style={{ color: '#bbb', marginTop: 12 }}>What we picked up</div>
               <div className="aspects">
-                {Object.entries(result.aspects).map(([k, v]) => (
-                  <span key={k} className={`asp ${v > 0.15 ? 'p' : v < -0.15 ? 'n' : ''}`}>{k} {v > 0.15 ? '👍' : v < -0.15 ? '👎' : '·'}</span>
+                {Object.entries(shown.aspects).map(([k, v]) => (
+                  <span key={k} className={`asp ${v > 0.15 ? 'p' : v < -0.15 ? 'n' : ''}`}>{k}: {v > 0.15 ? 'good 👍' : v < -0.15 ? 'poor 👎' : 'mixed'}</span>
                 ))}
               </div>
-            )}
+            </>)}
+            <div className="small" style={{ color: '#8f8a78', marginTop: 10 }}>This is our reading of your words. To change it, edit the text above.</div>
           </div>
 
+          <div className="small" style={{ color: '#bbb' }}>Tag topics (optional)</div>
           <div className="topics">
             {TOPICS.map(t => <button key={t} className={topics.includes(t) ? 'on' : ''} onClick={() => setPicked(a => (a.includes(t) ? a.filter(x => x !== t) : [...a, t]))}>{t}</button>)}
           </div>

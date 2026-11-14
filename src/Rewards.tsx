@@ -78,6 +78,29 @@ function Scratch({ r, token, auto, onDone }: { r: Reward; token: string | null; 
   )
 }
 
+// Long-term retention: gifts at 10 and 25 reviews, then a complimentary meal every 50.
+function Ladder({ n, next, gift }: { n: number; next: number; gift: string }) {
+  const steps = [10, 25, 50, ...(next > 50 ? [next] : [])].slice(-4)
+  const label = (at: number) => (at === 10 ? '₹20 cashback' : at === 25 ? 'Free snack' : 'Free meal')
+  const icon = (at: number) => (at === 10 ? '💸' : at === 25 ? '🍟' : '🎁')
+  const prev = next === 10 ? 0 : next === 25 ? 10 : next - 50 < 25 ? 25 : next - 50
+  const pct = Math.min(100, Math.round(((n - prev) / (next - prev)) * 100))
+  return (
+    <div className="card ladder">
+      <div className="between"><b>Loyalty gifts</b><span className="small muted">{n} review{n === 1 ? '' : 's'} so far</span></div>
+      <div className="ladder-steps">
+        {steps.map(at => (
+          <div key={at} className={`${n >= at ? 'done' : ''} ${at === next ? 'next' : ''}`}>
+            <span className="ic">{n >= at ? '✓' : icon(at)}</span><b>{at}</b><small>{label(at)}</small>
+          </div>
+        ))}
+      </div>
+      <div className="bar"><i style={{ width: `${pct}%` }} /></div>
+      <div className="small"><b>{next - n} more review{next - n === 1 ? '' : 's'}</b> to {gift}. After that, a complimentary meal every 50 reviews.</div>
+    </div>
+  )
+}
+
 type Props = {
   token: string | null; student: Student; setStudent: (s: Student) => void
   back: () => void; go: (r: { n: 'stores' } | { n: 'topup' }) => void
@@ -130,6 +153,8 @@ export default function RewardsScreen({ token, student, setStudent, back, go, op
           <div className="small status">{status}</div>
         </div>
 
+        <Ladder n={hub.loyalty.reviews} next={hub.loyalty.next_at} gift={hub.loyalty.next_gift} />
+
         <div className="tier-grid light">
           <div><b>{rupee(hub.saved_total)}</b><span>saved so far</span></div>
           <div><b>{rupee(hub.cashback_total)}</b><span>cashback earned</span></div>
@@ -153,6 +178,7 @@ export default function RewardsScreen({ token, student, setStudent, back, go, op
           <div><i>2</i><div><b>Keep feedback on</b><p>You agree once to share anonymous feedback. Stores see your words as “Student”, never your name or audio.</p></div></div>
           <div><i>3</i><div><b>Order 3 times in a month</b><p>You earn that month’s perk: a scratch card with a coupon or cashback.</p></div></div>
           <div><i>4</i><div><b>Nobody is paid per note</b><p>Feedback is never bought by the unit, so honest feedback stays honest.</p></div></div>
+          <div><i>5</i><div><b>Long-term gifts</b><p>Stay with us and the gifts grow: ₹20 cashback at 10 reviews, a free snack at 25, then a complimentary meal every 50. Each order carries one review, so every step is a real order.</p></div></div>
         </div>
 
         <div className="section-title">Wallet activity</div>

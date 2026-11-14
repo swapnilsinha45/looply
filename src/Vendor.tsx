@@ -1,20 +1,22 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Console from './Console'
 import type { Feedback } from './api'
-import { NeedsAttention, ReviewCard, CategoryBars, IgnoredList } from './Feedback'
+import { NeedsAttention, ReviewCard, CategoryBars, IgnoredList, TimeFilter, ProductSentiment, inRange, summarise, forProduct } from './Feedback'
+import type { Range } from './Feedback'
+import { CATEGORIES } from './Auth'
 import { TabIcon } from './ui'
 import type { FeedbackActs } from './Feedback'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
 
-export type Item = { id: string; sku: string; name: string; description: string; price: number; veg: boolean; stock: number; active: boolean }
+export type Item = { id: string; sku: string; name: string; description: string; price: number; veg: boolean; stock: number; active: boolean; category: string; low_stock_at: number }
 type Note = { id: string; transcript: string; sentiment: string; sentiment_score: number; duration_sec: number; topics: string[]; created_at: string; student: string; seq: number | null }
 export type Dash = {
   store: { id: string; code: string; name: string; tags: string; description: string; pure_veg: boolean; eta_min: number; open: boolean; phone: string | null }
   owner: { name: string; email: string; phone: string | null }
   orders_today: number; revenue_today: number; voice_notes: number; orders_total: number
   items: Item[]
-  low_stock: { id: string; name: string; stock: number }[]
+  low_stock: { id: string; name: string; stock: number; low_stock_at: number }[]
   topics: Record<string, number>
   sentiment: { positive: number; neutral: number; negative: number; avg: number }
   aspects: Record<string, { avg: number; n: number }>
@@ -51,9 +53,10 @@ const useWide = () => {
 
 const rupee = (n: number) => `₹${Number(n).toLocaleString('en-IN')}`
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong')
+export const itemArgs = (i: Item) => ({ p_id: i.id || null, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock, p_active: i.active, p_category: i.category, p_low_stock_at: i.low_stock_at })
 const NEXT: Record<string, string> = { new: 'preparing', preparing: 'ready', ready: 'done' }
 const LABEL: Record<string, string> = { new: 'New → Prepare', preparing: 'Preparing → Ready', ready: 'Ready → Done' }
-const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg: true, stock: 20, active: true }
+const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg: true, stock: 20, active: true, category: 'snack', low_stock_at: 10 }
 
 export default function Vendor({ token, logout, say, startDesktop }: { token: string; logout: () => void; say: (m: string) => void; startDesktop?: boolean }) {
   const [d, setD] = useState<Dash | null>(null)
@@ -65,14 +68,20 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
   const [tab, setTab] = useState<'orders' | 'menu' | 'insights' | 'store'>('orders')
   const [err, setErr] = useState('')
   const [editing, setEditing] = useState<Item | null>(null)
+  const [restocking, setRestocking] = useState<Item | null>(null)
+  const lowSeen = useRef<Set<string> | null>(null)
 
   const load = useCallback(() => Promise.all([
     rpc<Dash>('vendor_dashboard', { p_token: token }),
     rpc<Analytics>('vendor_analytics', { p_token: token }),
     rpc<Feedback>('vendor_feedback', { p_token: token }),
-  ]).then(([x, y, z]) => { setD(x); setA(y); setF(z); setErr('') }).catch(e => {
+  ]).then(([x, y, z]) => {
+    if (lowSeen.current) for (const i of x.low_stock) if (!lowSeen.current.has(i.id)) say(i.stock === 0 ? `${i.name} just sold out. Restock it from Products.` : `${i.name} is running low: ${i.stock} left`)
+    lowSeen.current = new Set(x.low_stock.map(i => i.id))
+    setD(x); setA(y); setF(z); setErr('')
+  }).catch(e => {
     setErr(errMsg(e)); if (/expired/i.test(errMsg(e))) logout()
-  }), [token, logout])
+  }), [token, logout, say])
   useEffect(() => { load(); const t = setInterval(() => { if (!editing) load() }, 5000); return () => clearInterval(t) }, [load, editing])
 
   const run = async (fn: string, args: Record<string, unknown>, ok?: string) => {
@@ -99,9 +108,9 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
   if (!d || !a || !f) return <div className="center">{err || 'Loading dashboard…'}</div>
   if (wide && view === 'desktop') return <Console d={d} a={a} f={f} act={act} run={run} logout={logout} onPhone={() => setView('phone')} />
 
+  const doRestock = async (i: Item, qty: number) => { if (await run('vendor_restock', { p_item: i.id, p_qty: qty }, `Added ${qty} to ${i.name}`)) setRestocking(null) }
+
   const advance = (id: string, status: string) => run('vendor_set_status', { p_order: id, p_status: NEXT[status] })
-  const restock = (i: Item) => run('vendor_upsert_item', { p_id: i.id, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock + 50, p_active: i.active }, `${i.name} restocked +50`)
-  const pct = d.orders_total ? Math.round((d.voice_notes / d.orders_total) * 100) : 0
 
   return (
     <div className="screen">
@@ -115,6 +124,7 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
       </div>
 
       <div className="scroll stack">
+        <StockAlerts low={d.low_stock} items={d.items} onRestock={setRestocking} />
         {tab === 'orders' && (<>
           <div className="stats">
             <div className="card stat"><span className="muted small">Orders today</span><b>{a.orders_today}</b></div>
@@ -123,10 +133,6 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
             <div className="card stat"><span className="muted small">Mood</span><b>{d.sentiment.positive + d.sentiment.neutral + d.sentiment.negative ? sentimentEmoji(d.sentiment.avg > 0.15 ? 'positive' : d.sentiment.avg < -0.15 ? 'negative' : 'neutral') : '—'}</b>
               <span className="small muted">avg {d.sentiment.avg > 0 ? '+' : ''}{d.sentiment.avg}</span></div>
           </div>
-          {d.low_stock.map(i => {
-            const it = d.items.find(x => x.id === i.id)
-            return <div key={i.id} className="alert"><span>{i.name}: {i.stock === 0 ? 'sold out' : `only ${i.stock} left`}.</span>{it && <button onClick={() => restock(it)}>Restock +50 ›</button>}</div>
-          })}
           <b>Active orders <span className="muted small">({d.queue.length})</span></b>
           {d.queue.length === 0 && <div className="muted center" style={{ padding: 16 }}>No active orders. Done orders leave this list, and new ones appear within 5 seconds.</div>}
           {d.queue.map(o => (
@@ -153,12 +159,13 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
                   <div className="small muted">{i.description}</div>
                 </div>
                 <div className="r"><b>{rupee(i.price)}</b>
-                  <span className="small" style={{ color: i.stock <= 10 ? 'var(--red)' : 'var(--muted)', fontWeight: 700 }}>{i.stock === 0 ? 'Sold out' : `${i.stock} in stock`}</span></div>
+                  <span className="small" style={{ color: i.stock <= i.low_stock_at ? 'var(--red)' : 'var(--muted)', fontWeight: 700 }}>{i.stock === 0 ? 'Sold out' : `${i.stock} in stock`}</span>
+                  <span className="small muted">warn at {i.low_stock_at}</span></div>
               </div>
               <div className="actions">
                 <button onClick={() => setEditing(i)}>Edit</button>
-                <button onClick={() => restock(i)}>+50 stock</button>
-                <button onClick={() => run('vendor_upsert_item', { p_id: i.id, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock, p_active: !i.active })}>{i.active ? 'Hide' : 'Show'}</button>
+                <button onClick={() => setRestocking(i)}>Restock</button>
+                <button onClick={() => run('vendor_upsert_item', itemArgs({ ...i, active: !i.active }))}>{i.active ? 'Hide' : 'Show'}</button>
                 <button className="danger" onClick={() => { if (confirm(`Delete ${i.name} (${i.sku})? This cannot be undone.`)) run('vendor_delete_item', { p_id: i.id }, `${i.name} deleted`) }}>Delete</button>
               </div>
             </div>
@@ -170,9 +177,10 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
       </div>
 
       {editing && <ItemSheet item={editing} onClose={() => setEditing(null)} onSave={async it => {
-        const ok = await run('vendor_upsert_item', { p_id: it.id || null, p_sku: it.sku, p_name: it.name, p_desc: it.description, p_price: it.price, p_veg: it.veg, p_stock: it.stock, p_active: it.active }, it.id ? 'Product updated' : 'Product added')
+        const ok = await run('vendor_upsert_item', itemArgs(it), it.id ? 'Product updated' : 'Product added')
         if (ok) setEditing(null)
       }} />}
+      {restocking && <RestockSheet item={restocking} onClose={() => setRestocking(null)} onAdd={q => doRestock(restocking, q)} />}
 
       <div className="tabs">
         {(['orders', 'menu', 'insights', 'store'] as const).map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}><TabIcon name={t} /><span>{t === 'menu' ? 'Products' : t[0].toUpperCase() + t.slice(1)}</span></button>)}
@@ -198,6 +206,12 @@ export function ItemSheet({ item, onClose, onSave }: { item: Item; onClose: () =
           <label><div className="label">Price (₹)</div><input className="field sm" inputMode="numeric" value={f.price} onChange={e => set('price', num(e.target.value))} /></label>
           <label><div className="label">Stock</div><input className="field sm" inputMode="numeric" value={f.stock} onChange={e => set('stock', num(e.target.value))} /></label>
         </div>
+        <div className="two">
+          <label><div className="label">Category</div>
+            <select className="field sm" value={f.category} onChange={e => set('category', e.target.value)}>{CATEGORIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+          <label><div className="label">Warn me at</div><input className="field sm" inputMode="numeric" value={f.low_stock_at} onChange={e => set('low_stock_at', num(e.target.value))} aria-describedby="warn-help" /></label>
+        </div>
+        <div id="warn-help" className="small muted">You get an alert when stock falls to this number. Stock goes down by itself with every order.</div>
         <div className="two" style={{ margin: '10px 0' }}>
           <label className="check-row"><input type="checkbox" checked={f.veg} onChange={e => set('veg', e.target.checked)} /> Vegetarian</label>
           <label className="check-row"><input type="checkbox" checked={f.active} onChange={e => set('active', e.target.checked)} /> Visible to students</label>
@@ -209,32 +223,77 @@ export function ItemSheet({ item, onClose, onSave }: { item: Item; onClose: () =
   )
 }
 
+// Restock by typing how many units arrived: no fixed +10 / +50 jumps.
+export function RestockSheet({ item, onClose, onAdd }: { item: Item; onClose: () => void; onAdd: (qty: number) => void }) {
+  const [qty, setQty] = useState('')
+  const n = Math.min(10000, Number(qty) || 0)
+  return (
+    <div className="sheet-bg" onClick={onClose}>
+      <form className="sheet" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); if (n > 0) onAdd(n) }}>
+        <h2 style={{ margin: '0 0 4px' }}>Restock {item.name}</h2>
+        <div className="small muted">{item.sku} · now {item.stock} in stock · warns at {item.low_stock_at}</div>
+        <label style={{ display: 'block', marginTop: 14 }}><div className="label">Units received</div>
+          <input className="field" inputMode="numeric" autoFocus value={qty} onChange={e => setQty(e.target.value.replace(/\D/g, '').slice(0, 5))} placeholder="e.g. 24" /></label>
+        {n > 0 && <div className="restock-preview">New stock will be <b>{item.stock + n}</b></div>}
+        <button className="btn" disabled={n < 1} style={{ marginTop: 12 }}>{n > 0 ? `Add ${n} unit${n === 1 ? '' : 's'}` : 'Enter a quantity'}</button>
+        <button type="button" className="btn ghost" style={{ marginTop: 8 }} onClick={onClose}>Cancel</button>
+      </form>
+    </div>
+  )
+}
+
+function StockAlerts({ low, items, onRestock }: { low: Dash['low_stock']; items: Item[]; onRestock: (i: Item) => void }) {
+  if (low.length === 0) return null
+  const out = low.filter(i => i.stock === 0)
+  return (
+    <div className="stock-alerts" role="alert">
+      <b>{out.length ? `${out.length} sold out` : ''}{out.length && low.length > out.length ? ' · ' : ''}{low.length > out.length ? `${low.length - out.length} running low` : ''}</b>
+      {low.map(i => {
+        const it = items.find(x => x.id === i.id)
+        return (
+          <div key={i.id} className={`sa-row ${i.stock === 0 ? 'out' : ''}`}>
+            <span>{i.name}: {i.stock === 0 ? 'sold out' : `${i.stock} left (warns at ${i.low_stock_at})`}</span>
+            {it && <button onClick={() => onRestock(it)}>Restock</button>}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 function Insights({ d, f, act }: { d: Dash; f: Feedback; act: FeedbackActs }) {
-  const s = d.sentiment
+  const [range, setRange] = useState<Range>('month')
+  const [product, setProduct] = useState<string | null>(null)
+  const inPeriod = f.notes.filter(n => inRange(n, range))
+  const notes = inPeriod.filter(n => forProduct(n, product))
+  const s = summarise(notes)
   const total = s.positive + s.neutral + s.negative
   const w = (n: number) => `${total ? (n / total) * 100 : 0}%`
+  void d
   return (<>
-    <NeedsAttention notes={f.notes} limit={3} act={act} />
+    <TimeFilter value={range} onChange={r => { setRange(r); setProduct(null) }} notes={f.notes} />
+    {product && <div className="filter-pill">Showing <b>{product}</b> <button onClick={() => setProduct(null)} aria-label="Clear product filter">✕</button></div>}
+    <NeedsAttention notes={notes} limit={3} act={act} />
     <div className="card">
       <b>Voice sentiment</b>
-      {total === 0 ? <div className="muted small" style={{ marginTop: 6 }}>No voice notes yet. Reviews students send will be analysed here.</div> : (<>
+      {total === 0 ? <div className="muted small" style={{ marginTop: 6 }}>No reviews in this period.</div> : (<>
         <div className="stackbar"><i style={{ width: w(s.positive), background: 'var(--green)' }} /><i style={{ width: w(s.neutral), background: '#c9c2ad' }} /><i style={{ width: w(s.negative), background: 'var(--red)' }} /></div>
         <div className="small" style={{ display: 'flex', justifyContent: 'space-between' }}>
           <span>😊 {s.positive} positive</span><span>😐 {s.neutral} neutral</span><span>😞 {s.negative} negative</span></div>
-        <div className="muted small" style={{ marginTop: 6 }}>Average score {s.avg > 0 ? '+' : ''}{s.avg} (−1 to +1) from {total} notes</div>
+        <div className="muted small" style={{ marginTop: 6 }}>Average mood {s.avg > 0 ? '+' : ''}{Math.round(s.avg * 100)} (−100 to +100) from {total} review{total === 1 ? '' : 's'}</div>
       </>)}
     </div>
-    <div className="card"><b>Types of feedback</b><div style={{ marginTop: 10 }}><CategoryBars categories={f.categories} /></div></div>
-    {Object.keys(d.aspects).length > 0 && <div className="card"><b>What students talk about</b>
-      {Object.entries(d.aspects).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => (
+    <div className="card"><b>By product</b><div style={{ marginTop: 10 }}><ProductSentiment notes={inPeriod} selected={product} onSelect={setProduct} /></div></div>
+    <div className="card"><b>Types of feedback</b><div style={{ marginTop: 10 }}><CategoryBars categories={s.categories} /></div></div>
+    {Object.keys(s.aspects).length > 0 && <div className="card"><b>What students talk about</b>
+      {Object.entries(s.aspects).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => { const avg = v.sum / v.n; return (
         <div key={k} className="aspect-row"><span>{k} <span className="muted small">({v.n})</span></span>
-          <span className="abar"><i style={{ left: `${((v.avg + 1) / 2) * 100}%`, background: v.avg > 0.15 ? 'var(--green)' : v.avg < -0.15 ? 'var(--red)' : '#999' }} /></span>
-          <b className="small" style={{ width: 40, textAlign: 'right', color: v.avg > 0.15 ? 'var(--green)' : v.avg < -0.15 ? 'var(--red)' : 'var(--muted)' }}>{v.avg > 0 ? '+' : ''}{v.avg}</b></div>
-      ))}
+          <span className="abar"><i style={{ left: `${((avg + 1) / 2) * 100}%`, background: avg > 0.15 ? 'var(--green)' : avg < -0.15 ? 'var(--red)' : '#999' }} /></span>
+          <b className="small" style={{ width: 40, textAlign: 'right', color: avg > 0.15 ? 'var(--green)' : avg < -0.15 ? 'var(--red)' : 'var(--muted)' }}>{avg > 0 ? '+' : ''}{Math.round(avg * 100)}</b></div>) })}
     </div>}
-    <b>Latest reviews</b>
-    {f.notes.length === 0 && <div className="muted center">Nothing here yet.</div>}
-    {f.notes.slice(0, 15).map(n => <ReviewCard key={n.id} n={n} compact act={act} />)}
+    <b>Reviews <span className="muted small">({notes.length})</span></b>
+    {notes.length === 0 && <div className="muted center">Nothing here for this period.</div>}
+    {notes.slice(0, 30).map(n => <ReviewCard key={n.id} n={n} compact act={act} />)}
     <IgnoredList notes={f.ignored} act={act} />
   </>)
 }

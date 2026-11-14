@@ -46,10 +46,10 @@ const BOOST: Record<string, number> = {
 const CONTRAST = new Set(['but', 'however', 'although', 'though', 'lekin', 'par', 'magar', 'yet', 'except'])
 
 export const ASPECTS: Record<string, string[]> = {
-  Taste: ['taste', 'tasty', 'flavour', 'flavor', 'food', 'spicy', 'bland', 'delicious', 'yummy', 'fresh', 'stale', 'maggi',
+  Taste: ['taste', 'tasty', 'tea', 'meal', 'dish', 'dishes', 'flavour', 'flavor', 'food', 'spicy', 'bland', 'delicious', 'yummy', 'fresh', 'stale', 'maggi',
     'chai', 'coffee', 'sandwich', 'roll', 'burger', 'pizza', 'juice', 'portion', 'quality', 'cooked', 'salty', 'sweet', 'swad'],
   'Wait time': ['wait', 'waiting', 'waited', 'slow', 'fast', 'quick', 'quickly', 'late', 'delay', 'delayed', 'time', 'minutes',
-    'queue', 'line', 'prompt', 'instant', 'ready', 'long', 'crowded', 'forever', 'der'],
+    'queue', 'line', 'prompt', 'instant', 'ready', 'long', 'crowded', 'forever', 'der', 'response', 'responded', 'speed'],
   Price: ['price', 'prices', 'cost', 'costly', 'expensive', 'cheap', 'affordable', 'pricey', 'money', 'worth', 'value',
     'overpriced', 'reasonable', 'rate', 'mrp', 'discount', 'mehenga', 'mehnga', 'paisa', 'rupees'],
   Hygiene: ['clean', 'dirty', 'hygiene', 'hygienic', 'unhygienic', 'smell', 'smelly', 'filthy', 'hair', 'insect', 'fly',
@@ -86,7 +86,7 @@ const tokenize = (s: string) =>
   norm(s).replace(/’/g, "'").replace(/sold out/g, 'soldout').replace(/on time/g, 'ontime').replace(/rip[\s-]?off/g, 'ripoff')
     .replace(/[^\p{L}\p{M}\p{N}'\s]/gu, ' ').split(/\s+/).filter(Boolean)
 
-function scoreTokens(tokens: string[], hl?: SentimentResult['highlights']): number {
+function scoreTokens(tokens: string[], hl?: SentimentResult['highlights'], parts?: { i: number; v: number }[]): number {
   let total = 0
   tokens.forEach((t, i) => {
     let base = POSN[t] ?? NEGN[t] ?? 0
@@ -104,6 +104,7 @@ function scoreTokens(tokens: string[], hl?: SentimentResult['highlights']): numb
     if (negated) base = -base * 0.75
     const v = base * mult
     total += v
+    parts?.push({ i, v })
     if (hl) hl.push({ word: t, polarity: v >= 0 ? 'pos' : 'neg' })
   })
   return total
@@ -136,14 +137,24 @@ export function analyse(text: string): SentimentResult {
   if (!clean) return { label: 'neutral', score: 0, aspects: {}, topics: [], highlights }
 
   const sums: Record<string, number[]> = {}
+  const mentioned = new Set<string>()
   let raw = 0
   for (const c of clauses(clean)) {
-    const r = scoreTokens(c.toks, highlights)
+    const parts: { i: number; v: number }[] = []
+    const r = scoreTokens(c.toks, highlights, parts)
     raw += c.afterContrast ? r * 1.5 : r // the clause after "but" carries the verdict
-    const sc = squash(r)
-    for (const aspect of Object.keys(ASPECT_KEYS)) {
-      if (c.toks.some(t => ASPECT_KEYS[aspect].has(t))) (sums[aspect] ||= []).push(sc)
+    // Each opinion word belongs to the nearest topic word in its clause, so
+    // "the food was really good, horrible response time" gives Taste + and Wait time −, not both −.
+    const kws: { a: string; i: number }[] = []
+    c.toks.forEach((t, i) => { for (const a of Object.keys(ASPECT_KEYS)) if (ASPECT_KEYS[a].has(t)) kws.push({ a, i }) })
+    kws.forEach(k => mentioned.add(k.a))
+    if (!kws.length) continue
+    const perAspect: Record<string, number> = {}
+    for (const p of parts) {
+      const near = kws.reduce((best, k) => (Math.abs(k.i - p.i) < Math.abs(best.i - p.i) ? k : best))
+      perAspect[near.a] = (perAspect[near.a] ?? 0) + p.v
     }
+    for (const [a, v] of Object.entries(perAspect)) (sums[a] ||= []).push(squash(v))
   }
   const bang = Math.min((clean.match(/!/g) || []).length, 3) * 0.1
   const score = Math.round(squash(raw * (1 + bang)) * 100) / 100
@@ -154,7 +165,7 @@ export function analyse(text: string): SentimentResult {
     if (Math.abs(avg) > 0.02) aspects[k] = Math.round(avg * 100) / 100
   }
   const label: Sentiment = score > 0.15 ? 'positive' : score < -0.15 ? 'negative' : 'neutral'
-  return { label, score, aspects, topics: Object.keys(sums), highlights }
+  return { label, score, aspects, topics: Array.from(mentioned), highlights }
 }
 
 export const sentimentEmoji = (s: string) => (s === 'positive' ? '😊' : s === 'negative' ? '😞' : '😐')

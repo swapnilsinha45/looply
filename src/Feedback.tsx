@@ -137,3 +137,86 @@ export function FlagBars({ flags, good }: { flags: Record<string, number>; good:
       <span className="c-track"><i style={{ width: `${(v / max) * 100}%`, background: good ? 'var(--green)' : 'var(--red)' }} /></span><b>{v}</b></div>
   ))}</div>)
 }
+
+// ---------- time filter (vendors only get the day of each review, which is all these need) ----------
+export type Range = 'today' | 'week' | 'month' | 'all'
+const RANGES: [Range, string][] = [['today', 'Today'], ['week', 'Past week'], ['month', 'Past month'], ['all', 'All time']]
+const istToday = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
+const daysAgo = (day: string) => Math.round((Date.parse(istToday()) - Date.parse(day)) / 86400000)
+export const inRange = (n: Note, r: Range) => {
+  if (r === 'all') return true
+  const d = daysAgo(String(n.created_at).slice(0, 10))
+  return r === 'today' ? d === 0 : r === 'week' ? d < 7 : d < 30
+}
+export function TimeFilter({ value, onChange, notes }: { value: Range; onChange: (r: Range) => void; notes: Note[] }) {
+  return (
+    <div className="c-chips time-filter" role="radiogroup" aria-label="Time period">
+      {RANGES.map(([r, label]) => (
+        <button key={r} role="radio" aria-checked={value === r} className={value === r ? 'on' : ''} onClick={() => onChange(r)}>
+          {label} <span className="cnt">{notes.filter(n => inRange(n, r)).length}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+const productsOf = (n: Note) => (n.products && n.products.length ? n.products : n.items ? n.items.split(', ') : [])
+
+// ---------- summaries computed from the filtered reviews, so every card follows the time filter ----------
+export function summarise(notes: Note[]) {
+  const s = { positive: 0, neutral: 0, negative: 0, avg: 0, categories: {} as Record<string, number>, flags: {} as Record<string, number>,
+    aspects: {} as Record<string, { sum: number; n: number }> }
+  for (const n of notes) {
+    s[n.sentiment] += 1
+    s.avg += n.sentiment_score
+    const c = n.category ?? 'uncategorised'
+    s.categories[c] = (s.categories[c] ?? 0) + 1
+    for (const f of n.flags) s.flags[f] = (s.flags[f] ?? 0) + 1
+    for (const [k, v] of Object.entries(n.aspects ?? {})) { const a = (s.aspects[k] ||= { sum: 0, n: 0 }); a.sum += v; a.n += 1 }
+  }
+  s.avg = notes.length ? Math.round((s.avg / notes.length) * 100) / 100 : 0
+  return s
+}
+
+// ---------- sentiment broken down by product ----------
+export function productStats(notes: Note[]) {
+  const m: Record<string, { name: string; n: number; pos: number; neu: number; neg: number; sum: number; flags: Record<string, number> }> = {}
+  for (const n of notes) for (const p of productsOf(n)) {
+    const r = (m[p] ||= { name: p, n: 0, pos: 0, neu: 0, neg: 0, sum: 0, flags: {} })
+    r.n += 1; r.sum += n.sentiment_score
+    if (n.sentiment === 'positive') r.pos += 1; else if (n.sentiment === 'negative') r.neg += 1; else r.neu += 1
+    for (const f of n.flags) r.flags[f] = (r.flags[f] ?? 0) + 1
+  }
+  return Object.values(m).map(r => {
+    const issues = Object.entries(r.flags).filter(([f]) => !FLAG[f]?.good).sort((a, b) => b[1] - a[1])
+    const praise = Object.entries(r.flags).filter(([f]) => FLAG[f]?.good).sort((a, b) => b[1] - a[1])
+    return { ...r, net: Math.round((r.sum / r.n) * 100), topIssue: issues[0]?.[0] ?? null, topPraise: praise[0]?.[0] ?? null }
+  }).sort((a, b) => b.n - a.n || a.net - b.net)
+}
+
+export function ProductSentiment({ notes, selected, onSelect }: { notes: Note[]; selected: string | null; onSelect: (p: string | null) => void }) {
+  const rows = productStats(notes)
+  if (rows.length === 0) return <div className="muted small">No reviews in this period.</div>
+  const rated = rows.filter(r => r.n >= 2)
+  const best = rated.length > 1 ? [...rated].sort((a, b) => b.net - a.net)[0] : null
+  const worst = rated.length > 1 ? [...rated].sort((a, b) => a.net - b.net)[0] : null
+  return (
+    <div className="ps">
+      {best && worst && best.name !== worst.name && (
+        <div className="ps-hl"><span className="good">Loved: <b>{best.name}</b> ({best.net > 0 ? '+' : ''}{best.net})</span>
+          <span className="bad">Needs work: <b>{worst.name}</b> ({worst.net > 0 ? '+' : ''}{worst.net})</span></div>
+      )}
+      {rows.map(r => (
+        <button key={r.name} className={`ps-row ${selected === r.name ? 'on' : ''}`} onClick={() => onSelect(selected === r.name ? null : r.name)}
+          aria-pressed={selected === r.name} title="Show only reviews of this product">
+          <span className="ps-name"><b>{r.name}</b><small>{r.n} review{r.n === 1 ? '' : 's'}{r.topIssue ? ` · ${FLAG[r.topIssue]?.label ?? r.topIssue}` : r.topPraise ? ` · ${FLAG[r.topPraise]?.label ?? r.topPraise}` : ''}</small></span>
+          <span className="ps-bar"><i style={{ width: `${(r.pos / r.n) * 100}%`, background: 'var(--green)' }} /><i style={{ width: `${(r.neu / r.n) * 100}%`, background: '#e0b400' }} /><i style={{ width: `${(r.neg / r.n) * 100}%`, background: 'var(--red)' }} /></span>
+          <b className={`ps-net ${r.net > 15 ? 'up' : r.net < -15 ? 'down' : ''}`}>{r.net > 0 ? '+' : ''}{r.net}</b>
+        </button>
+      ))}
+      <div className="small muted">Tap a product to see only its reviews. Score is the average mood, from −100 to +100.</div>
+    </div>
+  )
+}
+
+export const forProduct = (n: Note, p: string | null) => !p || productsOf(n).includes(p)

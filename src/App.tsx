@@ -5,6 +5,7 @@ import Vendor from './Vendor'
 import { StudentAuth, VendorAuth } from './Auth'
 import RewardsScreen, { rewardEffect } from './Rewards'
 import Gateway from './Gateway'
+import SpendScreen from './Spend'
 import { PendingReviews } from './Pending'
 import { Header, errMsg, foodEmoji, rupee, store } from './ui'
 import type { Favourite, MenuItem, OrderRow, Reward, RewardsHub, Store, Student } from './api'
@@ -65,7 +66,7 @@ export default function App() {
       {route.n === 'rewards' && student && <RewardsScreen token={token} student={student} setStudent={setStudent} back={back} go={go} openId={route.open}
         refreshStudent={() => rpc<Student>('student_me', { p_token: token }).then(setStudent).catch(() => {})} />}
       {route.n === 'topup' && student && <Gateway student={student} token={token} back={back} setStudent={setStudent} />}
-      {route.n === 'spend' && <Spend {...ctx} />}
+      {route.n === 'spend' && <SpendScreen token={token} back={back} />}
       {route.n === 'vendorLogin' && <VendorAuth back={back} onAuth={t => { store.set('looply_vendor', t); setVToken(t); reset({ n: 'vendor', desktop: route.desktop }) }} />}
       {route.n === 'vendor' && vToken && <Vendor token={vToken} logout={logout} say={say} startDesktop={route.desktop} />}
       {!student && ['home', 'menu', 'cart', 'paid', 'rewards', 'topup'].includes(route.n) && <div className="center">Loading…</div>}
@@ -410,28 +411,6 @@ function Orders({ back, token, go }: Ctx) {
               : <button className="review-btn" onClick={() => go({ n: 'voice', orderId: o.id, auto: true })}>● Record feedback <small>optional</small></button>}
           </div>
         ))}
-      </div>
-    </div>
-  )
-}
-
-function Spend({ back, token }: Ctx) {
-  const [rows, setRows] = useState<OrderRow[] | null>(null)
-  useEffect(() => { rpc<OrderRow[]>('my_orders', { p_token: token }).then(setRows).catch(() => setRows([])) }, [token])
-  const byStore: Record<string, number> = {}
-  rows?.forEach(o => { byStore[o.store_name] = (byStore[o.store_name] ?? 0) + o.total })
-  const entries = Object.entries(byStore).sort((a, b) => b[1] - a[1])
-  const max = Math.max(1, ...entries.map(e => e[1]))
-  const total = entries.reduce((s, e) => s + e[1], 0)
-  return (
-    <div className="screen">
-      <Header title="Spend analysis" sub="Where your wallet goes" back={back} />
-      <div className="scroll stack">
-        <div className="card"><div className="muted small">Total spent</div><b style={{ fontSize: 30 }}>{rupee(total)}</b></div>
-        {entries.length === 0 && <div className="center muted">No spending yet.</div>}
-        {entries.length > 0 && <div className="card"><div className="chart">
-          {entries.map(([name, v]) => <div key={name}>{rupee(v)}<i style={{ height: `${(v / max) * 80}%` }} /><span className="muted" style={{ fontSize: 10 }}>{name.split(' ')[0]}</span></div>)}
-        </div></div>}
       </div>
     </div>
   )

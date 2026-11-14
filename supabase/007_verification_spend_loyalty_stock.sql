@@ -1,0 +1,10 @@
+-- Applied as migration "verification_spend_loyalty_stock" (see Supabase migration history for the full text).
+-- Store rename: HGS-001 is now "Haneena Food Junction".
+-- menu_items.category (meal/snack/beverage/dessert/essentials) and menu_items.low_stock_at (per-product warning level).
+-- Email verification + password reset: email_codes (hashed, 10-minute, 5 attempts, 3 codes / 15 min), issue_email_code (service role),
+--   verify_email, reset_password; student_login / vendor_login raise EMAIL_NOT_VERIFIED:<email>; store_auth.verified.
+--   Enforced only once app_secrets has brevo_api_key + mail_sender (_mail_ready); until then sign-up auto-verifies as before.
+-- vendor_upsert_item gains p_category, p_low_stock_at; vendor_restock adds a typed quantity (1 to 10,000).
+-- vendor_dashboard low_stock uses each product's own warning level.
+-- Loyalty ladder in save_voice_note: ₹20 cashback at 10 reviews, free snack (≤₹40) at 25, complimentary meal (≤₹100) every 50.
+-- my_spend: weekly/monthly totals and series, category split, top items, spend by store. vendor_feedback returns products + aspects per review.

@@ -28,6 +28,12 @@ Edge functions (`supabase/functions/`, deployed with `verify_jwt` off; they chec
 - **Anonymous to vendors:** stores see "Student", the words, the mood and tags. Never names, audio, order numbers, exact times, or a link between an order and its feedback (enforced in the database).
 - **Vendors:** phone dashboard by default with a button to the desktop console. Active orders, products and SKUs, inventory, "Needs attention" bad reviews with severity and issue tags, translate and ignore on every review, an "Actionable feedback" metric (specific, usable notes rather than volume), sentiment by product, theme, hour and day.
 
+- **Login verification:** sign-up sends a 6-digit email code (10-minute expiry, 5 tries, 3 codes per 15 minutes) and there is a Forgot password flow, for students and vendors. Turns on automatically once  has  and  (Brevo free plan, edge function ).
+- **Spend analysis:** this week and month versus the last, weekly and monthly charts, meals vs snacks vs drinks, most-ordered items, spend by store.
+- **Loyalty ladder:** ₹20 cashback at 10 reviews, a free snack at 25, a complimentary meal every 50. One review per order, so each step is a real order.
+- **Stock:** stock falls automatically with each order; each product has its own warning level, alerts show on every vendor screen, and restocking is a typed quantity.
+- **Feedback for vendors:** time filters (today, past week, past month) and sentiment broken down by product.
+
 ## Demo logins (password `looply123`)
 - Student: `durgesh@iimb.ac.in` (or ID `PGP2026-114`)
 - Vendors: `hgs@looply.demo`, `snc@looply.demo`, `aml@looply.demo`, `mrs@looply.demo`, `gmc@looply.demo`, `juc@looply.demo`
