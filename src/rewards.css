@@ -318,3 +318,7 @@
 .c-select { font: inherit; font-size: 13px; font-weight: 700; padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff; }
 .dark .back { color: var(--ink); }
 .c-grid2 { align-items: start; }
+
+/* One-tap pause for new orders, in the vendor header */
+.pause-btn { background: var(--ink); color: var(--yellow); font-weight: 800; font-size: 12px; padding: 8px 12px; border-radius: 999px; white-space: nowrap; }
+.pause-btn.closed { background: #fde8ea; color: var(--red); }

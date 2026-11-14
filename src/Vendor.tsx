@@ -56,6 +56,8 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : 'Something went
 export const itemArgs = (i: Item) => ({ p_id: i.id || null, p_sku: i.sku, p_name: i.name, p_desc: i.description, p_price: i.price, p_veg: i.veg, p_stock: i.stock, p_active: i.active, p_category: i.category, p_low_stock_at: i.low_stock_at })
 const NEXT: Record<string, string> = { new: 'preparing', preparing: 'ready', ready: 'done' }
 const LABEL: Record<string, string> = { new: 'New → Prepare', preparing: 'Preparing → Ready', ready: 'Ready → Done' }
+// Pause or resume new orders in one tap (testers could not find this inside Store settings).
+export const storeOpenArgs = (s: Dash['store'], open: boolean) => ({ p_name: s.name, p_tags: s.tags, p_description: s.description, p_pure_veg: s.pure_veg, p_eta: s.eta_min, p_open: open, p_phone: s.phone ?? '' })
 const blank: Item = { id: '', sku: '', name: '', description: '', price: 0, veg: true, stock: 20, active: true, category: 'snack', low_stock_at: 10 }
 
 export default function Vendor({ token, logout, say, startDesktop }: { token: string; logout: () => void; say: (m: string) => void; startDesktop?: boolean }) {
@@ -118,7 +120,8 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
         <div className="row">
           <div style={{ flex: 1 }}><h1 style={{ fontSize: 22 }}>{d.store.name}</h1>
             <div className="sub">{d.store.open ? 'Accepting orders' : 'Closed to new orders'} · {d.store.code}</div></div>
-          <span className="badge-v">VENDOR</span>
+          <button className={`pause-btn ${d.store.open ? '' : 'closed'}`} onClick={() => run('vendor_update_store', storeOpenArgs(d.store, !d.store.open), d.store.open ? 'New orders paused' : 'Accepting orders again')}>
+            {d.store.open ? 'Pause orders' : 'Resume orders'}</button>
         </div>
         {wide && <button className="desk-btn" onClick={() => setView('desktop')}>Open desktop dashboard <span>›</span></button>}
       </div>
@@ -130,8 +133,8 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
             <div className="card stat"><span className="muted small">Orders today</span><b>{a.orders_today}</b></div>
             <div className="card stat"><span className="muted small">Revenue today</span><b>{rupee(a.revenue_today)}</b></div>
             <div className="card stat"><span className="muted small">Actionable feedback</span><b>{a.useful_notes}</b><span className="up">{a.notes_total ? Math.round((a.useful_notes / a.notes_total) * 100) : 0}% of {a.notes_total} notes</span></div>
-            <div className="card stat"><span className="muted small">Mood</span><b>{d.sentiment.positive + d.sentiment.neutral + d.sentiment.negative ? sentimentEmoji(d.sentiment.avg > 0.15 ? 'positive' : d.sentiment.avg < -0.15 ? 'negative' : 'neutral') : '—'}</b>
-              <span className="small muted">avg {d.sentiment.avg > 0 ? '+' : ''}{d.sentiment.avg}</span></div>
+            <div className="card stat"><span className="muted small">Student mood</span><b>{d.sentiment.positive + d.sentiment.neutral + d.sentiment.negative ? sentimentEmoji(d.sentiment.avg > 0.15 ? 'positive' : d.sentiment.avg < -0.15 ? 'negative' : 'neutral') : '—'}</b>
+              <span className="small muted">How reviews feel overall: {d.sentiment.avg > 0 ? '+' : ''}{Math.round(d.sentiment.avg * 100)} on a −100 to +100 scale</span></div>
           </div>
           <b>Active orders <span className="muted small">({d.queue.length})</span></b>
           {d.queue.length === 0 && <div className="muted center" style={{ padding: 16 }}>No active orders. Done orders leave this list, and new ones appear within 5 seconds.</div>}

@@ -4,7 +4,7 @@ import type { Feedback } from './api'
 import { CATEGORY, CategoryBars, FlagBars, IgnoredList, NeedsAttention, ProductSentiment, ReviewCard, TimeFilter, forProduct, inRange, summarise } from './Feedback'
 import type { Range } from './Feedback'
 import type { FeedbackActs } from './Feedback'
-import { ItemSheet, RestockSheet, StoreTab, itemArgs } from './Vendor'
+import { ItemSheet, RestockSheet, StoreTab, itemArgs, storeOpenArgs } from './Vendor'
 import { CATEGORIES } from './Auth'
 import { sentimentEmoji } from './sentiment'
 
@@ -71,7 +71,8 @@ export default function Console({ d, a, f, act, run, logout, onPhone, initial }:
           <div className="c-head-r">
             {d.low_stock.length > 0 && <button className="c-btn warn" onClick={() => setSec('inventory')}>⚠ {d.low_stock.filter(i => i.stock === 0).length ? `${d.low_stock.filter(i => i.stock === 0).length} sold out · ` : ''}{d.low_stock.length} need restock</button>}
             <button className="c-btn ghost" onClick={onPhone}>Phone view</button>
-            <span className={`c-pill ${d.store.open ? 'ok' : 'off'}`}>{d.store.open ? '● Accepting orders' : '● Closed'}</span>
+            <span className={`c-pill ${d.store.open ? 'ok' : 'off'}`}>{d.store.open ? '● Accepting orders' : '● Orders paused'}</span>
+            <button className="c-btn ghost" onClick={() => run('vendor_update_store', storeOpenArgs(d.store, !d.store.open), d.store.open ? 'New orders paused' : 'Accepting orders again')}>{d.store.open ? 'Pause orders' : 'Resume orders'}</button>
             {sec === 'products' && <button className="c-btn" onClick={() => setEditing({ ...blank })}>+ Add product</button>}
           </div>
         </header>

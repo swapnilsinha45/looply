@@ -93,8 +93,16 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    } catch {
-      setErr('Microphone is blocked. Allow mic access, or tap “Type instead”.')
+    } catch (e) {
+      // Say what went wrong and how to fix it (a Useberry tester got stuck switching microphones).
+      const name = (e as DOMException)?.name
+      setErr(name === 'NotAllowedError' || name === 'SecurityError'
+        ? 'Microphone is blocked. Tap the lock or settings icon next to the web address, set Microphone to Allow, then tap Record again. Or tap “Type instead”.'
+        : name === 'NotFoundError' || name === 'OverconstrainedError'
+          ? 'No microphone found. Plug in or switch on a microphone, then tap Record again. Or tap “Type instead”.'
+          : name === 'NotReadableError' || name === 'AbortError'
+            ? 'Another app or tab is using the microphone. Close it (or end the call), then tap Record again.'
+            : 'Could not start the microphone. Check your browser’s microphone setting, then tap Record again, or tap “Type instead”.')
       return
     }
     let mr: MediaRecorder
