@@ -4,7 +4,8 @@ import type { Feedback } from './api'
 import { NeedsAttention, ReviewCard, CategoryBars, IgnoredList, TimeFilter, ProductSentiment, inRange, summarise, forProduct } from './Feedback'
 import type { Range } from './Feedback'
 import { CATEGORIES } from './Auth'
-import { TabIcon } from './ui'
+import { TabIcon, store } from './ui'
+import Tour, { tourDone, tourKey, vendorSteps } from './Tour'
 import type { FeedbackActs } from './Feedback'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
@@ -72,6 +73,8 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
   const [editing, setEditing] = useState<Item | null>(null)
   const [restocking, setRestocking] = useState<Item | null>(null)
   const lowSeen = useRef<Set<string> | null>(null)
+  const [touring, setTouring] = useState(false)
+  const tourChecked = useRef(false)
 
   const load = useCallback(() => Promise.all([
     rpc<Dash>('vendor_dashboard', { p_token: token }),
@@ -107,6 +110,13 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
       } catch (e) { say(errMsg(e)) }
     },
   }
+  useEffect(() => {
+    if (!d || tourChecked.current) return
+    tourChecked.current = true
+    if (d.orders_total === 0 && !tourDone(d.store.id)) setTouring(true)
+  }, [d])
+  const endTour = useCallback(() => { if (d) store.set(tourKey(d.store.id), '1'); setTouring(false); setTab('orders') }, [d])
+
   if (!d || !a || !f) return <div className="center">{err || 'Loading dashboard…'}</div>
   if (wide && view === 'desktop') return <Console d={d} a={a} f={f} act={act} run={run} logout={logout} onPhone={() => setView('phone')} />
 
@@ -120,16 +130,16 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
         <div className="row">
           <div style={{ flex: 1 }}><h1 style={{ fontSize: 22 }}>{d.store.name}</h1>
             <div className="sub">{d.store.open ? 'Accepting orders' : 'Closed to new orders'} · {d.store.code}</div></div>
-          <button className={`pause-btn ${d.store.open ? '' : 'closed'}`} onClick={() => run('vendor_update_store', storeOpenArgs(d.store, !d.store.open), d.store.open ? 'New orders paused' : 'Accepting orders again')}>
+          <button data-tour="pause" className={`pause-btn ${d.store.open ? '' : 'closed'}`} onClick={() => run('vendor_update_store', storeOpenArgs(d.store, !d.store.open), d.store.open ? 'New orders paused' : 'Accepting orders again')}>
             {d.store.open ? 'Pause orders' : 'Resume orders'}</button>
         </div>
-        {wide && <button className="desk-btn" onClick={() => setView('desktop')}>Open desktop dashboard <span>›</span></button>}
+        {wide && <button data-tour="desktop" className="desk-btn" onClick={() => setView('desktop')}>Open desktop dashboard <span>›</span></button>}
       </div>
 
       <div className="scroll stack">
         <StockAlerts low={d.low_stock} items={d.items} onRestock={setRestocking} />
         {tab === 'orders' && (<>
-          <div className="stats">
+          <div className="stats" data-tour="stats">
             <div className="card stat"><span className="muted small">Orders today</span><b>{a.orders_today}</b></div>
             <div className="card stat"><span className="muted small">Revenue today</span><b>{rupee(a.revenue_today)}</b></div>
             <div className="card stat"><span className="muted small">Actionable feedback</span><b>{a.useful_notes}</b><span className="up">{a.notes_total ? Math.round((a.useful_notes / a.notes_total) * 100) : 0}% of {a.notes_total} notes</span></div>
@@ -176,7 +186,7 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
         </>)}
 
         {tab === 'insights' && <Insights d={d} f={f} act={act} />}
-        {tab === 'store' && <StoreTab d={d} run={run} logout={logout} />}
+        {tab === 'store' && <StoreTab d={d} run={run} logout={logout} onTour={() => setTouring(true)} />}
       </div>
 
       {editing && <ItemSheet item={editing} onClose={() => setEditing(null)} onSave={async it => {
@@ -185,8 +195,9 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
       }} />}
       {restocking && <RestockSheet item={restocking} onClose={() => setRestocking(null)} onAdd={q => doRestock(restocking, q)} />}
 
+      {touring && <Tour steps={vendorSteps(d.store.name, wide)} setTab={setTab} onClose={endTour} />}
       <div className="tabs">
-        {(['orders', 'menu', 'insights', 'store'] as const).map(t => <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}><TabIcon name={t} /><span>{t === 'menu' ? 'Products' : t[0].toUpperCase() + t.slice(1)}</span></button>)}
+        {(['orders', 'menu', 'insights', 'store'] as const).map(t => <button key={t} data-tour={t === 'menu' ? 'products' : t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}><TabIcon name={t} /><span>{t === 'menu' ? 'Products' : t[0].toUpperCase() + t.slice(1)}</span></button>)}
       </div>
     </div>
   )
@@ -301,7 +312,7 @@ function Insights({ d, f, act }: { d: Dash; f: Feedback; act: FeedbackActs }) {
   </>)
 }
 
-export function StoreTab({ d, run, logout }: { d: Dash; run: (fn: string, a: Record<string, unknown>, ok?: string) => Promise<boolean>; logout: () => void }) {
+export function StoreTab({ d, run, logout, onTour }: { d: Dash; run: (fn: string, a: Record<string, unknown>, ok?: string) => Promise<boolean>; logout: () => void; onTour?: () => void }) {
   const s = d.store
   const [f, setF] = useState({ name: s.name, tags: s.tags, description: s.description, pure_veg: s.pure_veg, eta: s.eta_min, open: s.open, phone: s.phone ?? '' })
   return (<>
@@ -319,6 +330,7 @@ export function StoreTab({ d, run, logout }: { d: Dash; run: (fn: string, a: Rec
       <button className="btn">Save store</button>
     </form>
     <div className="card small"><b>Account</b><div className="muted" style={{ marginTop: 6 }}>{d.owner.name} · {d.owner.email}</div></div>
+    {onTour && <button className="btn ghost" onClick={onTour}>Take the tour again</button>}
     <button className="btn ghost" onClick={logout}>Sign out</button>
   </>)
 }
