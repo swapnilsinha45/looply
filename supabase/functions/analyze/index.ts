@@ -63,7 +63,9 @@ Deno.serve(async req => {
     if (!token || !review) return json({ error: 'Missing review or session' }, 400)
 
     const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    const { data: auth } = await db.from('student_auth').select('student_id').eq('token', token).maybeSingle()
+    // same check as the database: per-login sessions (several devices) plus the legacy single token
+    const { data: sid } = await db.rpc('_student_from_token', { p_token: String(token) })
+    const auth = sid ? { student_id: sid as string } : null
     if (!auth) return json({ error: 'Session expired' }, 401)
 
     // no consent, no audio or text leaves the app
