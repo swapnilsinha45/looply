@@ -1,3 +1,4 @@
+import { TOUR_PENDING } from './Tour'
 import { useEffect, useState } from 'react'
 import { rpc, supabase } from './api'
 import Voice from './Voice'
@@ -67,7 +68,7 @@ export default function App() {
         refreshStudent={() => rpc<Student>('student_me', { p_token: token }).then(setStudent).catch(() => {})} />}
       {route.n === 'topup' && student && <Gateway student={student} token={token} back={back} setStudent={setStudent} />}
       {route.n === 'spend' && <SpendScreen token={token} back={back} />}
-      {route.n === 'vendorLogin' && <VendorAuth back={back} onAuth={t => { store.set('looply_vendor', t); setVToken(t); reset({ n: 'vendor', desktop: route.desktop }) }} />}
+      {route.n === 'vendorLogin' && <VendorAuth back={back} onAuth={t => { store.set('looply_vendor', t); store.set(TOUR_PENDING, '1'); setVToken(t); reset({ n: 'vendor', desktop: route.desktop }) }} />}
       {route.n === 'vendor' && vToken && <Vendor token={vToken} logout={logout} say={say} startDesktop={route.desktop} />}
       {!student && ['home', 'menu', 'cart', 'paid', 'rewards', 'topup'].includes(route.n) && <div className="center">Loading…</div>}
       {toast && <div className="toast">{toast}</div>}

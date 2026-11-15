@@ -339,3 +339,8 @@
 .tour-next { background: var(--ink); color: var(--yellow); }
 .tour-back { background: #f3eee2; color: var(--ink); }
 .tour-skip { background: none; color: #7a7363; padding-left: 0 !important; }
+
+/* Delete account (vendor settings) */
+.btn.danger-link { background: none; color: var(--red); font-weight: 700; box-shadow: none; margin-top: 4px; }
+.btn.danger { background: var(--red); color: #fff; }
+.btn.danger:disabled { opacity: .5; }

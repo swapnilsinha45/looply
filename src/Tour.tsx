@@ -4,10 +4,12 @@ import { store } from './ui'
 // A short guided tour for a vendor's first visit: a spotlight on each part of the phone dashboard.
 // Steps point at elements marked with data-tour="...". Each step can switch the tab first.
 export type VTab = 'orders' | 'menu' | 'insights' | 'store'
-type Step = { target?: string; tab?: VTab; title: string; body: string }
+export type Step = { target?: string; tab?: string; title: string; body: string }
 
-export const tourKey = (storeId: string) => `looply_tour_done_${storeId}`
-export const tourDone = (storeId: string) => store.get(tourKey(storeId)) === '1'
+// set on every vendor sign-in; the dashboard shows the tour once, then clears it
+export const TOUR_PENDING = 'looply_vendor_tour'
+export const tourPending = () => store.get(TOUR_PENDING) === '1'
+export const clearTour = () => store.set(TOUR_PENDING, null)
 
 export function vendorSteps(storeName: string, wide: boolean): Step[] {
   return [
@@ -22,13 +24,29 @@ export function vendorSteps(storeName: string, wide: boolean): Step[] {
   ]
 }
 
-export default function Tour({ steps, setTab, onClose }: { steps: Step[]; setTab: (t: VTab) => void; onClose: () => void }) {
+// The same tour for the desktop console (a new vendor may sign up on a laptop).
+export function consoleSteps(storeName: string): Step[] {
+  return [
+    { title: `Welcome to Looply, ${storeName}`, body: 'A one-minute tour of your dashboard. You can skip it now and replay it any time from Settings.' },
+    { target: 'c-overview', tab: 'overview', title: 'Your day at a glance', body: 'Orders and revenue against yesterday, actionable feedback, and the overall student mood from −100 to +100.' },
+    { target: 'c-orders', tab: 'orders', title: 'Orders arrive here', body: 'New orders show up within 5 seconds. Move each one along: Start preparing, Mark ready, Mark done.' },
+    { target: 'c-pause', tab: 'orders', title: 'Need a break?', body: 'Pause new orders in one click. Click again to start accepting orders.' },
+    { target: 'c-products', tab: 'products', title: 'Products', body: 'Add products and SKUs with + Add product. Hide an item when it is not available today.' },
+    { target: 'c-inventory', tab: 'inventory', title: 'Stock', body: 'Stock falls by itself with every order. Set “Warn at” for each product and type the units you receive to restock.' },
+    { target: 'c-insights', tab: 'insights', title: 'What students say', body: 'Anonymous voice reviews: you see “Student”, never names. Serious complaints come first. Translate or Ignore any review.' },
+    { target: 'c-sentiment', tab: 'sentiment', title: 'How students feel', body: 'Mood by product, by hour and by day, so you can see what to fix first.' },
+    { target: 'c-phone', tab: 'overview', title: 'On the counter?', body: 'Switch to the phone view for a simple screen you can use while serving.' },
+    { target: 'c-settings', tab: 'settings', title: 'Your store settings', body: 'Edit your name, prep time and phone. You can replay this tour from here whenever you like.' },
+  ]
+}
+
+export default function Tour({ steps, setTab, onClose }: { steps: Step[]; setTab: (t: never) => void; onClose: () => void }) {
   const [i, setI] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const step = steps[i]
   const last = i === steps.length - 1
 
-  useEffect(() => { if (step.tab) setTab(step.tab) }, [step, setTab])
+  useEffect(() => { if (step.tab) (setTab as (t: string) => void)(step.tab) }, [step, setTab])
 
   // find the highlighted element after the tab renders; follow it on scroll and resize
   useLayoutEffect(() => {

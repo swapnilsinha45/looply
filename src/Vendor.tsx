@@ -5,7 +5,7 @@ import { NeedsAttention, ReviewCard, CategoryBars, IgnoredList, TimeFilter, Prod
 import type { Range } from './Feedback'
 import { CATEGORIES } from './Auth'
 import { TabIcon, store } from './ui'
-import Tour, { tourDone, tourKey, vendorSteps } from './Tour'
+import Tour, { clearTour, tourPending, vendorSteps } from './Tour'
 import type { FeedbackActs } from './Feedback'
 import { rpc } from './api'
 import { sentimentEmoji } from './sentiment'
@@ -113,12 +113,12 @@ export default function Vendor({ token, logout, say, startDesktop }: { token: st
   useEffect(() => {
     if (!d || tourChecked.current) return
     tourChecked.current = true
-    if (d.orders_total === 0 && !tourDone(d.store.id)) setTouring(true)
+    if (tourPending()) setTouring(true)
   }, [d])
-  const endTour = useCallback(() => { if (d) store.set(tourKey(d.store.id), '1'); setTouring(false); setTab('orders') }, [d])
+  const endTour = useCallback(() => { clearTour(); setTouring(false); setTab('orders') }, [])
 
   if (!d || !a || !f) return <div className="center">{err || 'Loading dashboard…'}</div>
-  if (wide && view === 'desktop') return <Console d={d} a={a} f={f} act={act} run={run} logout={logout} onPhone={() => setView('phone')} />
+  if (wide && view === 'desktop') return <Console d={d} a={a} f={f} act={act} run={run} logout={logout} onPhone={() => setView('phone')} touring={touring} onTour={() => setTouring(true)} onTourEnd={endTour} />
 
   const doRestock = async (i: Item, qty: number) => { if (await run('vendor_restock', { p_item: i.id, p_qty: qty }, `Added ${qty} to ${i.name}`)) setRestocking(null) }
 
@@ -332,5 +332,40 @@ export function StoreTab({ d, run, logout, onTour }: { d: Dash; run: (fn: string
     <div className="card small"><b>Account</b><div className="muted" style={{ marginTop: 6 }}>{d.owner.name} · {d.owner.email}</div></div>
     {onTour && <button className="btn ghost" onClick={onTour}>Take the tour again</button>}
     <button className="btn ghost" onClick={logout}>Sign out</button>
+    <DeleteAccount storeName={s.name} logout={logout} />
+  </>)
+}
+
+// Delete the vendor account after the password is typed again. Stores with past orders are closed,
+// hidden and stripped of personal details so students keep their own history; empty stores are removed fully.
+function DeleteAccount({ storeName, logout }: { storeName: string; logout: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [pw, setPw] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const del = async () => {
+    setBusy(true); setErr('')
+    try {
+      await rpc('vendor_delete_account', { p_token: store.get('looply_vendor'), p_password: pw })
+      logout()
+    } catch (e) { setErr(errMsg(e)); setBusy(false) }
+  }
+  return (<>
+    <button className="btn danger-link" onClick={() => setOpen(true)}>Delete account</button>
+    {open && (
+      <div className="sheet-bg" onClick={() => !busy && setOpen(false)}>
+        <form className="sheet" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); if (pw) del() }}>
+          <h2 style={{ margin: '0 0 6px' }}>Delete {storeName}?</h2>
+          <p className="small muted" style={{ margin: '0 0 12px', lineHeight: 1.5 }}>
+            Your login, menu and contact details are deleted and the store disappears for students. This cannot be undone.
+            Students keep their own past orders and reviews.</p>
+          <label><div className="label">Type your password to confirm</div>
+            <input className="field" type="password" autoComplete="current-password" autoFocus value={pw} onChange={e => setPw(e.target.value)} /></label>
+          {err && <div className="err" style={{ marginTop: 8 }}>{err}</div>}
+          <button className="btn danger" disabled={!pw || busy} style={{ marginTop: 12 }}>{busy ? 'Deleting…' : 'Delete account permanently'}</button>
+          <button type="button" className="btn ghost" style={{ marginTop: 8 }} disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+        </form>
+      </div>
+    )}
   </>)
 }
