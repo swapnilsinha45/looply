@@ -344,3 +344,8 @@
 .btn.danger-link { background: none; color: var(--red); font-weight: 700; box-shadow: none; margin-top: 4px; }
 .btn.danger { background: var(--red); color: #fff; }
 .btn.danger:disabled { opacity: .5; }
+
+/* small "Type instead" link under every Record button */
+.type-link { display: block; margin: 8px auto 0; background: none; color: var(--muted); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; padding: 4px 8px; }
+.pc-actions { display: flex; flex-direction: column; align-items: center; }
+.pc-actions .type-link { margin-top: 4px; }

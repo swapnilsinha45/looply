@@ -19,14 +19,14 @@ const pickMime = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'au
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 type Props = {
-  orderId: string; token: string | null; auto?: boolean; feedbackOn: boolean
+  orderId: string; token: string | null; auto?: boolean; typed?: boolean; feedbackOn: boolean
   back: () => void; reset: (r: { n: 'home' }) => void
   setStudent: (s: Student) => void; say: (m: string) => void
 }
 
-export default function Voice({ orderId, token, auto, feedbackOn, back, reset, setStudent, say }: Props) {
+export default function Voice({ orderId, token, auto, typed, feedbackOn, back, reset, setStudent, say }: Props) {
   const [consented, setConsented] = useState(feedbackOn)
-  const [phase, setPhase] = useState<'idle' | 'rec' | 'transcribing' | 'review' | 'saving'>('idle')
+  const [phase, setPhase] = useState<'idle' | 'rec' | 'transcribing' | 'review' | 'saving'>(typed ? 'review' : 'idle')
   const [stage, setStage] = useState('')
   const [secs, setSecs] = useState(0)
   const [text, setText] = useState('')
@@ -132,7 +132,7 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
   // arriving from "Tap to record": start listening straight away so recording takes a single tap
   const autoStarted = useRef(false)
   useEffect(() => {
-    if (auto && consented && !autoStarted.current) { autoStarted.current = true; start() }
+    if (auto && !typed && consented && !autoStarted.current) { autoStarted.current = true; start() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -256,7 +256,7 @@ export default function Voice({ orderId, token, auto, feedbackOn, back, reset, s
       <div className="reward" style={{ marginTop: 16 }}>Optional. The store sees your words as “Student”, never your name or audio.</div>
       {(phase === 'idle' || phase === 'review') && <button className="linkbtn" style={{ color: '#aaa', marginBottom: 20 }} onClick={() => reset({ n: 'home' })}>Skip</button>}
       {!consented && <ConsentSheet token={token} onCancel={() => reset({ n: 'home' })}
-        onDone={s => { setStudent(s); setConsented(true); if (auto) setTimeout(() => { autoStarted.current = true; start() }, 60) }} />}
+        onDone={s => { setStudent(s); setConsented(true); if (auto && !typed) setTimeout(() => { autoStarted.current = true; start() }, 60) }} />}
     </div>
   )
 }

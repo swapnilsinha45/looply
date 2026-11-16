@@ -7,7 +7,7 @@ export const ago = (iso: string) => {
 }
 
 // Recent orders that have no voice review yet, with a one-tap way to record it.
-export function PendingReviews({ orders, onRecord }: { orders: OrderRow[]; onRecord: (orderId: string) => void }) {
+export function PendingReviews({ orders, onRecord, onType }: { orders: OrderRow[]; onRecord: (orderId: string) => void; onType: (orderId: string) => void }) {
   if (orders.length === 0) return null
   return (
     <>
@@ -21,7 +21,10 @@ export function PendingReviews({ orders, onRecord }: { orders: OrderRow[]; onRec
               <span className="small muted">{rupee(o.total)} · {ago(o.created_at)}</span>
               <span className="pc-reward">Optional · 15 seconds</span>
             </div>
-            <button className="pc-btn" onClick={() => onRecord(o.id)}>Record now</button>
+            <div className="pc-actions">
+              <button className="pc-btn" onClick={() => onRecord(o.id)}>Record now</button>
+              <button className="type-link" onClick={() => onType(o.id)}>Type instead</button>
+            </div>
           </div>
         ))}
       </div>

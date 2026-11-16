@@ -15,7 +15,7 @@ type Route =
   | { n: 'welcome' } | { n: 'studentLogin' } | { n: 'home' } | { n: 'stores' }
   | { n: 'menu'; store: Store; prefill?: { item_id: string; qty: number }[] } | { n: 'cart'; store: Store; items: MenuItem[] }
   | { n: 'paid'; orderId: string; total: number; discount: number; cashback: number; storeName: string; perk: string | null; monthOrders: number }
-  | { n: 'voice'; orderId: string; auto?: boolean } | { n: 'orders' } | { n: 'rewards'; open?: string } | { n: 'topup' } | { n: 'spend' }
+  | { n: 'voice'; orderId: string; auto?: boolean; typed?: boolean } | { n: 'orders' } | { n: 'rewards'; open?: string } | { n: 'topup' } | { n: 'spend' }
   | { n: 'vendorLogin'; desktop?: boolean } | { n: 'vendor'; desktop?: boolean }
 
 export default function App() {
@@ -62,7 +62,7 @@ export default function App() {
       {route.n === 'menu' && student && <Menu {...ctx} student={student} shop={route.store} prefill={route.prefill} />}
       {route.n === 'cart' && student && <Cart {...ctx} student={student} shop={route.store} items={route.items} />}
       {route.n === 'paid' && student && <Paid {...ctx} student={student} r={route} />}
-      {route.n === 'voice' && <Voice orderId={route.orderId} auto={route.auto} feedbackOn={student?.feedback_on === true} token={token} back={back} reset={reset} setStudent={setStudent} say={say} />}
+      {route.n === 'voice' && <Voice orderId={route.orderId} auto={route.auto} typed={route.typed} feedbackOn={student?.feedback_on === true} token={token} back={back} reset={reset} setStudent={setStudent} say={say} />}
       {route.n === 'orders' && <Orders {...ctx} />}
       {route.n === 'rewards' && student && <RewardsScreen token={token} student={student} setStudent={setStudent} back={back} go={go} openId={route.open}
         refreshStudent={() => rpc<Student>('student_me', { p_token: token }).then(setStudent).catch(() => {})} />}
@@ -158,7 +158,7 @@ function Home({ student, token, go, logout }: Ctx & { student: Student }) {
           </div>
         </button>
 
-        <PendingReviews orders={unreviewed} onRecord={id => go({ n: 'voice', orderId: id, auto: true })} />
+        <PendingReviews orders={unreviewed} onRecord={id => go({ n: 'voice', orderId: id, auto: true })} onType={id => go({ n: 'voice', orderId: id, typed: true })} />
 
         {favs && favs.length > 0 && (<>
           <div className="section-title">{favs.some(f => !f.popular) ? 'Your favourites' : 'Popular on campus'}</div>
@@ -387,6 +387,7 @@ function Paid({ student, r, go, reset }: Ctx & { student: Student; r: Extract<Ro
         <div className="orb"><div><span className="core" /></div></div>
         <p className="small" style={{ margin: '0 0 16px' }}>Say it in any language. The store sees your words as “Student”, never your name or your audio. Nobody is paid per note.</p>
         <button className="btn dk" onClick={() => go({ n: 'voice', orderId: r.orderId, auto: true })}>● Record feedback</button>
+        <button className="type-link" style={{ color: '#bbb' }} onClick={() => go({ n: 'voice', orderId: r.orderId, typed: true })}>Type instead</button>
       </div>
       <button className="linkbtn" style={{ color: '#aaa', marginBottom: 24 }} onClick={() => reset({ n: 'home' })}>Skip for now</button>
     </div>
@@ -409,7 +410,8 @@ function Orders({ back, token, go }: Ctx) {
               <div className="r"><b>{rupee(o.total)}</b><span className={`status ${o.status}`}>{o.status}</span></div></div>
             <div className="small" style={{ marginTop: 6 }}>{o.items}</div>
             {o.has_note ? <span className="note">Feedback sent</span>
-              : <button className="review-btn" onClick={() => go({ n: 'voice', orderId: o.id, auto: true })}>● Record feedback <small>optional</small></button>}
+              : <><button className="review-btn" onClick={() => go({ n: 'voice', orderId: o.id, auto: true })}>● Record feedback <small>optional</small></button>
+                <button className="type-link" onClick={() => go({ n: 'voice', orderId: o.id, typed: true })}>Type instead</button></>}
           </div>
         ))}
       </div>
