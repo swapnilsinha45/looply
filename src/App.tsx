@@ -387,7 +387,7 @@ function Paid({ student, r, go, reset }: Ctx & { student: Student; r: Extract<Ro
         <div className="orb"><div><span className="core" /></div></div>
         <p className="small" style={{ margin: '0 0 16px' }}>Say it in any language. The store sees your words as “Student”, never your name or your audio. Nobody is paid per note.</p>
         <button className="btn dk" onClick={() => go({ n: 'voice', orderId: r.orderId, auto: true })}>● Record feedback</button>
-        <button className="type-link" style={{ color: '#bbb' }} onClick={() => go({ n: 'voice', orderId: r.orderId, typed: true })}>Type instead</button>
+        <button className="type-link" style={{ color: '#fff' }} onClick={() => go({ n: 'voice', orderId: r.orderId, typed: true })}>Type instead</button>
       </div>
       <button className="linkbtn" style={{ color: '#aaa', marginBottom: 24 }} onClick={() => reset({ n: 'home' })}>Skip for now</button>
     </div>
